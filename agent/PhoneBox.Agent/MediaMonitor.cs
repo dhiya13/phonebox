@@ -11,6 +11,28 @@ public sealed class MediaMonitor(ILogger<MediaMonitor> log) : BackgroundService
     private readonly SemaphoreSlim _pollGate = new(1, 1);
     private GlobalSystemMediaTransportControlsSession? _observed;
     private long _revision;
+    private string? _shownApp; // the session shown last, kept while it plays
+
+    /// <summary>
+    /// The session to show and control. Windows' "current" session is the one that started last, and it stays current
+    /// when it pauses or ends: a video started over music and then stopped would make the music look stopped (and end
+    /// a "media playing" rule) while it still plays. So a playing session wins over a current one that is not playing,
+    /// the one already shown first.
+    /// </summary>
+    private GlobalSystemMediaTransportControlsSession? PickSession()
+    {
+        var current = _mgr!.GetCurrentSession();
+        IReadOnlyList<GlobalSystemMediaTransportControlsSession> all;
+        try { all = _mgr.GetSessions(); } catch { return current; }
+        var pick = MediaSessionPick.Pick(all.Select(s => (s.SourceAppUserModelId, IsPlaying(s))).ToList(), current?.SourceAppUserModelId, _shownApp);
+        return pick is { } i ? all[i] : current;
+    }
+
+    private static bool IsPlaying(GlobalSystemMediaTransportControlsSession s)
+    {
+        try { return s.GetPlaybackInfo().PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing; }
+        catch { return false; }
+    }
 
     public AlbumArt? Art => _art.Current;
     public MediaSnapshot? Snapshot() => _snap;
@@ -72,8 +94,9 @@ public sealed class MediaMonitor(ILogger<MediaMonitor> log) : BackgroundService
 
     private async Task PollCore(CancellationToken ct)
     {
-        var s = _mgr!.GetCurrentSession();
+        var s = PickSession();
         Observe(s);
+        _shownApp = s?.SourceAppUserModelId;
         if (s is null) { _snap = null; _art.Clear(); return; }
         var revision = Interlocked.Read(ref _revision);
 
@@ -120,7 +143,8 @@ public sealed class MediaMonitor(ILogger<MediaMonitor> log) : BackgroundService
 
     public async Task<bool> Control(string action, long? ms)
     {
-        var s = _mgr?.GetCurrentSession();
+        // the session the phone shows, so play / pause acts on what is on screen
+        var s = _mgr is null ? null : PickSession();
         if (s is null)
         {
             // No session: send the media key instead (wakes up Spotify, for example).
@@ -141,7 +165,7 @@ public sealed class MediaMonitor(ILogger<MediaMonitor> log) : BackgroundService
 
     public async Task<bool> PauseAsync()
     {
-        var s = _mgr?.GetCurrentSession();
+        var s = _mgr is null ? null : PickSession();
         if (s is null || s.GetPlaybackInfo().PlaybackStatus != GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
             return false;
         var ok = await s.TryPauseAsync();
