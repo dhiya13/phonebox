@@ -75,7 +75,7 @@ keeps the screen on.
 |---|---|
 | **Time** | Clock (with status line and weather) · Analog clock (any time zone) · **Word clock** · World clocks · Calendar · **Next up** · Time progress (day / week / month / year) · Countdown · Pomodoro · Quick timer · Stopwatch |
 | **Weather & sky** | Weather · Forecast (hourly / 7 days) · Sun & moon (daylight left, UV, moon phase) · **Moon** · Air quality (European AQI, PM2.5, PM10, O₃, NO₂) |
-| **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · Shortcut grid · Big button (optionally filled with the shortcut's uploaded picture) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) · **Trackpad** (control PC cursor, tap to click, hold to drag, scroll) |
+| **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · Shortcut grid · **Big button** (its own picture, label and colour; runs a shortcut or switches a Home Assistant entity, see below) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) · **Trackpad** (control PC cursor, tap to click, hold to drag, scroll) |
 | **AI & code** | AI quotas · Quota ring · AI sessions (Claude Code, Codex, Cursor) · GitHub |
 | **Personal** | **Agenda** (Google / Outlook / iCloud calendars) · Note (edit it from the phone) · Checklist (resets daily) · Counter · Breathe · Quote · Title · Phone battery · **Computers** (switch between paired computers) · **Photo frame** (a slideshow from a photo folder on the PC) |
 | **Web & data** | **Custom HTML** (your own widget, sandboxed) · **Home Assistant** (entities with their own name and icon, tap to switch) · **Pushed value** · **Notifications** (both fed by [webhooks](#webhooks)) · **News feeds** (your RSS and Atom feeds; with its "Open articles on the PC" option, a tap opens the article on the PC) · Hacker News · Exchange rates (ECB) · Crypto prices · Image / webcam · **Camera** (a live picture from an IP camera over RTSP, pulled by ffmpeg on the PC) |
@@ -85,6 +85,35 @@ public APIs ([Open-Meteo](https://open-meteo.com), [Frankfurter](https://frankfu
 [HN](https://github.com/HackerNews/API)) on the phone, without API keys, and keep their last data when offline.
 If the phone has no internet, these five supported HTTPS feeds can fall back through the agent over USB.
 The feed proxy is not available over Wi-Fi. See [PRIVACY.md](../PRIVACY.md) for the services contacted.
+
+**Home Assistant without the PC**: normally the phone asks the agent, which asks Home Assistant. To keep your
+Home Assistant tiles working while the PC is off, turn on **Settings › General › Home Assistant › Phones reach Home
+Assistant themselves when this PC is off**. Paired phones then get an address and a token from the agent, along with
+the entities your Home Assistant widgets list and each one's **Allow switching** setting, and the panel talks to Home
+Assistant directly whenever the agent does not answer.
+
+- Connect the phone to the PC (USB or Wi-Fi) once after turning it on, so the phone picks up the settings; it checks
+  again about once a minute while connected. Turning the option off makes the phone forget them the next time it
+  connects.
+- The phone shows the layout it last got from the PC. Only the Home Assistant widgets keep working; widgets that need
+  the PC wait for it.
+- Use an address the phone can reach, such as `http://192.168.1.10:8123` or `http://homeassistant.local:8123`, not
+  `localhost`. If the PC uses a different address, put the phone's in **Address for phones**. Plain `http://` works
+  only for local addresses (private and Tailscale IPs, `.local`, `.lan`, `.home.arpa`); anything else needs `https://`.
+- Best practice: create a second long-lived token in Home Assistant just for the phones and put it in **Token for
+  phones**, so you can revoke it on its own if the phone is lost.
+
+**Big button** is one large key. In its settings, **When tapped** picks what it does:
+
+- **Run a shortcut**: as before. Its label, emoji and colour come from the shortcut unless you set the button's own.
+- **Home Assistant**: pick an entity from the list. Scripts and scenes run; lights, switches, fans, covers and the like
+  toggle, and the button shows whether they are on. No shortcut and no `curl` command are needed, and the token stays
+  in Settings › General › Home Assistant instead of in a shortcut's command line. With **Phones reach Home Assistant
+  themselves when this PC is off**, these buttons keep working with the PC off.
+
+**Picture** uploads a PNG, WEBP or SVG (up to 512 KB) for the button itself, and **Fill the button with its picture**
+makes it the background. The phone keeps the pictures, so the buttons look the same while the PC is off. A button
+set to a shortcut without its own picture uses the shortcut's, as before.
 
 **Camera** shows an IP camera that streams over RTSP. Add it in **Settings › General › Cameras** with a name and its
 RTSP address (`rtsp://user:password@192.168.1.20:554/…`; the camera's manual or app has the exact path), then pick it
@@ -257,6 +286,9 @@ switchable ports). The panel keeps running over Wi-Fi while the USB power is off
   with the paired key. Settings, shortcut tests and pairing stay local. **New key** in the settings unpairs all phones.
 - The phone only ever sends a shortcut **id**; commands are defined on the PC. Command widgets work the same way:
   the phone asks for a widget's output and never sees the command.
+- The Home Assistant token stays on the PC unless you turn on **Phones reach Home Assistant themselves when this PC
+  is off**; then paired phones keep the phone token (or the PC's, if you leave it empty) in the app's private storage,
+  out of the panel's reach, and use it only while the PC does not answer.
 - `config.json` (with the Wi-Fi, webhook and Home Assistant keys), its backup and the pushed data are readable only by
   your user on macOS and Linux (0600); on Windows they live in your profile folder.
 - Webhooks from other machines need the separate webhook key, which cannot open the phone API and can be replaced

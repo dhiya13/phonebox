@@ -916,14 +916,7 @@ W.shortcuts = {
   },
 };
 
-W.button = {
-  bare: true, needs: ['state'],
-  create(box, { o }) {
-    const s = (cfg.shortcuts || []).find((x) => x.id === o.id) || (cfg.shortcuts || [])[0];
-    box.append(s ? keyButton(s, { cover: o.cover === true, label: o.showLabel !== false }) : h('div', 'empty', t('w.pickShortcut')));
-    return { update: () => applyToggles(box) };
-  },
-};
+// The Big button lives in pc.js, next to the Home Assistant widget it shares its rules with.
 
 W.worldclock = {
   needs: ['tick'],

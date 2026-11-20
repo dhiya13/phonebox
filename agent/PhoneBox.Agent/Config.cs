@@ -212,7 +212,7 @@ public sealed class UpdateConfig
 {
     /// <summary>Install new GitHub releases automatically (phone app over USB, agent in place).</summary>
     public bool Auto { get; set; } = true;
-    public string Repo { get; set; } = "ersinkoc/phonebox";
+    public string Repo { get; set; } = "dhiya13/phonebox"; // this fork's releases (upstream: ersinkoc/phonebox)
 }
 
 public sealed class ClaudeConfig
@@ -358,6 +358,16 @@ public sealed class HomeAssistantConfig
 {
     public string? Url { get; set; }
     public string? Token { get; set; }
+    /// <summary>
+    /// Paired phones may talk to Home Assistant themselves while this computer is off or out of reach. Off by default:
+    /// it hands a token to the phone. Only the entities the Home Assistant widgets list, with their switch permission,
+    /// go with it.
+    /// </summary>
+    public bool PhoneDirect { get; set; }
+    /// <summary>The address the phone uses (this computer may reach Home Assistant at an address the phone cannot); empty = <see cref="Url"/>.</summary>
+    public string? PhoneUrl { get; set; }
+    /// <summary>A token just for the phones, so it can be revoked on its own; empty = <see cref="Token"/>.</summary>
+    public string? PhoneToken { get; set; }
 }
 
 public sealed class PhoneConfig
@@ -562,7 +572,7 @@ public sealed partial class ConfigStore(string path)
         c.Claude ??= new();
         c.Claude.TimeoutSec = Math.Clamp(c.Claude.TimeoutSec, 10, 3600);
         c.Cursor ??= new();
-        if (string.IsNullOrWhiteSpace(c.Updates.Repo)) c.Updates.Repo = "ersinkoc/phonebox";
+        if (string.IsNullOrWhiteSpace(c.Updates.Repo)) c.Updates.Repo = "dhiya13/phonebox";
         c.Lan.Port = Math.Clamp(c.Lan.Port, 1024, 65535);
         if (string.IsNullOrWhiteSpace(c.Lan.Token)) c.Lan.Token = NewToken();
         if (string.IsNullOrWhiteSpace(c.Lan.WebhookToken)) c.Lan.WebhookToken = NewToken();
@@ -630,6 +640,8 @@ public sealed partial class ConfigStore(string path)
         c.HomeAssistant ??= new();
         c.HomeAssistant.Url = string.IsNullOrWhiteSpace(c.HomeAssistant.Url) ? null : c.HomeAssistant.Url.Trim().TrimEnd('/');
         c.HomeAssistant.Token = string.IsNullOrWhiteSpace(c.HomeAssistant.Token) ? null : c.HomeAssistant.Token.Trim();
+        c.HomeAssistant.PhoneUrl = string.IsNullOrWhiteSpace(c.HomeAssistant.PhoneUrl) ? null : c.HomeAssistant.PhoneUrl.Trim().TrimEnd('/');
+        c.HomeAssistant.PhoneToken = string.IsNullOrWhiteSpace(c.HomeAssistant.PhoneToken) ? null : c.HomeAssistant.PhoneToken.Trim();
         c.Console ??= new();
         c.Console.Profiles = (c.Console.Profiles ?? []).Where(p => p is not null).Take(200).ToList(); // more than 30 is refused on save
         var consoleIds = new HashSet<string>();

@@ -690,7 +690,7 @@ export async function runShortcut(btn, id) {
 
 /** A shortcut key. The Big button's options: with `cover`, a picture the user uploaded becomes the key's background
  *  instead of the centred icon; without `label`, the key shows no name (screen readers still get it). */
-export function keyButton(s, { cover = false, label = true } = {}) {
+export function keyButton(s, { cover = false, label = true, picture = null, onTap = null } = {}) {
   const icon = h('span', 'k-icon', s.icon ? rich(s.icon) : '•');
   const b = h('button', 'key' + (s.toggle ? ' toggle' : '') + (label ? '' : ' k-nolabel'), icon, h('span', 'k-label', s.label));
   // The agent accepts a blank label, and a filled key hides its icon, so the id keeps the button named when no text
@@ -699,12 +699,26 @@ export function keyButton(s, { cover = false, label = true } = {}) {
   if (!label || !name) b.setAttribute('aria-label', name || s.id);
   b.style.setProperty('--k', s.color || '#6b7280');
   b.dataset.id = s.id;
-  b.addEventListener('click', () => runShortcut(b, s.id));
+  b.addEventListener('click', () => (onTap ? onTap(b) : runShortcut(b, s.id)));
   // Only an upload fills the key: a program's own icon is 32 px on Windows, 64 px on macOS, and on Linux whatever logo
   // the icon theme has, none of them a picture the user chose for the button. The agent says which is which, since the
   // picture's size cannot tell (an SVG reports a default size, often 24 px from an icon set).
-  if (s.iconRev != null) applyShortcutIcon(b, icon, s.id, cover && s.iconUpload === true);
+  // a Big button's own picture (Layout › Big button › Picture) wins over its shortcut's
+  if (picture) applyPicture(b, icon, `${API}/button-picture?id=${encodeURIComponent(picture)}`, cover);
+  else if (s.iconRev != null) applyShortcutIcon(b, icon, s.id, cover && s.iconUpload === true);
   return b;
+}
+
+function applyPicture(b, icon, url, cover) {
+  const img = new Image();
+  img.onload = () => {
+    if (!cover) { icon.replaceChildren(img); icon.classList.add('k-icon-img'); return; }
+    img.className = 'k-bg';
+    img.alt = '';
+    b.prepend(img, h('span', 'k-shade'));
+    b.classList.add('k-cover');
+  };
+  img.src = url;
 }
 
 function applyShortcutIcon(b, icon, id, cover) {

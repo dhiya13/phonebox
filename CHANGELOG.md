@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.22.1 — 2026-11-20
+
+First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream
+version they are based on, and the agent now looks for updates in this fork's releases.
+
+**Panel**
+- Big button: its own picture, label, emoji and colour, set in the button's settings, so a button no longer needs a
+  shortcut to carry a picture. **When tapped** can now switch a **Home Assistant** entity directly: scripts and scenes
+  run, switches and lights toggle and show whether they are on, and a refused call says why. No `curl` shortcut with
+  the token in its command line is needed, and with the PC off the phone switches it itself. Buttons set to a shortcut
+  look and work as before.
+
+**Phone app**
+- Big button pictures are kept on the phone, so the buttons keep them while the PC is off.
+- Home Assistant without the PC: with the new **Settings › General › Home Assistant › Phones reach Home Assistant
+  themselves when this PC is off** (off by default), the Home Assistant widgets keep showing and switching your
+  entities while the PC is off. The phone talks to Home Assistant directly only when the agent does not answer, and
+  follows the same rules: only the widgets' entities, and switching only where the widget allows it. Optional separate
+  address and token for phones.
+
 ## 0.9.22 — 2026-11-19
 
 Greek, a Trackpad widget, Claude Code session details and chat titles, CPU and GPU temperature on Apple silicon Macs,

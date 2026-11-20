@@ -59,6 +59,7 @@ builder.Services.AddSingleton(endpoint);
 builder.Services.AddSingleton<AudioControl>();
 builder.Services.AddSingleton<AppCatalog>();
 builder.Services.AddSingleton(_ => new ShortcutIconUploads(Path.Combine(configDir, "icons")));
+builder.Services.AddSingleton(_ => new ButtonPictures(Path.Combine(configDir, "icons", "buttons")));
 builder.Services.AddSingleton<PairingCodes>();
 builder.Services.AddSingleton<SpotifyControl>();
 builder.Services.AddSingleton<ControlDeck>();
@@ -273,7 +274,7 @@ app.MapPost("/api/pair/start", (ConfigStore cfg, PairingCodes codes) =>
     var hosts = Lan.Addresses();
     var fingerprint = Lan.Fingerprint(lanCert);
     var link = PairingCodes.Link(Environment.MachineName, fingerprint, lanCfg.Port, hosts, code);
-    var apk = $"https://github.com/ersinkoc/phonebox/releases/download/v{AppPaths.Version}/PhoneBox-{AppPaths.Version}.apk";
+    var apk = $"https://github.com/{cfg.Get().Updates.Repo}/releases/download/v{AppPaths.Version}/PhoneBox-{AppPaths.Version}.apk";
     return Results.Json(new
     {
         enabled = true,
@@ -352,7 +353,7 @@ app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>
     return Results.Text(json, "application/json; charset=utf-8");
 });
 
-app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck deck, PhotoFrame photos, CameraFeeds cameras, ShortcutIconUploads icons, ILogger<Program> log) =>
+app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck deck, PhotoFrame photos, CameraFeeds cameras, ShortcutIconUploads icons, ButtonPictures pictures, ILogger<Program> log) =>
 {
     if (req.ContentType?.StartsWith("application/json") != true) return Results.StatusCode(415);
     using var r = new StreamReader(req.Body);
@@ -372,6 +373,7 @@ app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck
     cameras.SettingsSaved();
     deck.ReconcileRadios(waitForGate: true);
     icons.Cleanup(() => cfg.Get().Shortcuts.Select(s => s.Id)); // drop uploads for shortcuts that got deleted
+    pictures.Cleanup(ButtonPictures.Used(cfg.Get())); // and Big button pictures no button uses any more
     ShortcutIcons.ClearHasIconCache();
     log.LogInformation("settings saved");
     return Results.Ok(new { version = savedVersion.ToString(CultureInfo.InvariantCulture) });
@@ -538,6 +540,9 @@ app.MapGet("/api/ha/states", async (string? ids, HomeAssistant ha) =>
     Results.Json(await ha.StatesAsync((ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))));
 app.MapPost("/api/ha/toggle/{id}", async (string id, HomeAssistant ha) =>
     await ha.ToggleAsync(id) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
+// Home Assistant without this computer: what a paired phone needs to reach Home Assistant itself while the computer is off
+// (only when Settings › General › Home Assistant allows it). The phone stores it and uses it only when the agent is out of reach.
+app.MapGet("/api/ha/direct", (ConfigStore cfg) => Results.Json(HomeAssistant.DirectFor(cfg.Get())));
 // Settings › General › Ping & network: the connected adapters to pick from (local only, not on the Wi-Fi list)
 app.MapGet("/api/network/adapters", (ConfigStore cfg) => Results.Json(SystemMonitor.Adapters(cfg.Get().Ping.Adapters)));
 
@@ -865,6 +870,25 @@ app.MapGet("/api/shortcuts/icon", (string id, bool? upload, ConfigStore cfg, Sho
 // phone only ever needs to read an icon (GET /api/shortcuts/icon, above), never write one.
 app.MapPost("/api/settings/shortcut-icon", (string id, HttpRequest req, ConfigStore cfg, ShortcutIconUploads icons) =>
     UploadShortcutIconAsync(id, req.Headers["X-Config-Version"], req.Body, req.ContentType, cfg, icons));
+
+// A Big button's own picture (see ButtonPictures), for the phone: only one a button uses. The id is the picture's
+// content hash, so it never changes under the same address and may be cached.
+app.MapGet("/api/button-picture", (string? id, ConfigStore cfg, ButtonPictures pictures, HttpResponse res) =>
+{
+    if (id is null || !ButtonPictures.Used(cfg.Get()).Contains(id) || pictures.Read(id) is not { } found) return Results.NotFound();
+    res.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+    res.Headers["X-Content-Type-Options"] = "nosniff";
+    res.Headers.CacheControl = "private, max-age=31536000, immutable";
+    return Results.File(found.Bytes, found.ContentType);
+});
+
+// Layout › Big button › Picture: stores an upload (PNG, WEBP or SVG, 512 KB max) and answers its id, which the layout
+// then saves in the button's "picture" option. Local only, like the rest of the settings API.
+app.MapPost("/api/settings/button-picture", async (HttpRequest req, ButtonPictures pictures) =>
+{
+    var (id, error) = pictures.Save(req.ContentType, await ShortcutIconUploads.ReadBounded(req.Body));
+    return error is null ? Results.Ok(new { id }) : Results.BadRequest(new { error });
+});
 
 // Removes a shortcut's uploaded icon; it falls back to its auto-detected program icon, or the emoji.
 app.MapDelete("/api/settings/shortcut-icon", (string id, HttpRequest req, ConfigStore cfg, ShortcutIconUploads icons) =>

@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Cleartext HTTP is allowed only for the local agent reached over USB (adb reverse). -->
-<network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
+<!-- Cleartext HTTP: the local agent over USB (adb reverse), and Home Assistant on this network when the computer is off
+     (HaDirect allows plain HTTP only to private, Tailscale and .local / .lan / .home.arpa addresses). The agent over
+     Wi-Fi is always HTTPS with a pinned certificate. The panel itself loads from https://appassets.androidplatform.net. -->
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <base-config cleartextTrafficPermitted="true" tools:ignore="InsecureBaseConfiguration" />
 </network-security-config>

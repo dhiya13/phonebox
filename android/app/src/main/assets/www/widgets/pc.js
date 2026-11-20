@@ -1,6 +1,7 @@
-import { $, API, D, PANEL_HEADERS, LOCALE, Q_STYLE, api, bridge, cfg, color, cssVar, rulesPaused, toggleRulesPause, fillIcon, fmtDur, fmtHM, fmtMem, gotoPageRef, gpuMem, gpusOf, h, en, haptic, icon, openSheet, paceInfo, pad, pairedPcs, quotaProviders, r1, shortGpu, store, switchPc, t, tick, toast, transport, emo, labelled, rich } from '../main.js';
+import { $, API, D, PANEL_HEADERS, LOCALE, Q_STYLE, api, bridge, cfg, color, cssVar, rulesPaused, toggleRulesPause, fillIcon, fmtDur, fmtHM, fmtMem, gotoPageRef, gpuMem, gpusOf, h, en, haptic, icon, openSheet, paceInfo, pad, pairedPcs, quotaProviders, r1, shortGpu, store, switchPc, t, tick, toast, transport, emo, labelled, rich, keyButton } from '../main.js';
 import { W } from '../registry.js';
 import { canKillAnywhere, dialEl, every } from './helpers.js';
+import { applyToggles } from './basic.js';
 
 // ---------------------------------------------------------------- phone & PC
 // Your own HTML / CSS / JavaScript in a sandboxed iframe (no access to the panel, the agent or the phone). It gets
@@ -284,7 +285,7 @@ W.ha = {
     }
     const load = async () => {
       try {
-        const parts = await Promise.all(batches.map((b) => api('/ha/states?ids=' + encodeURIComponent(b.join(',')))));
+        const parts = await Promise.all(batches.map((b) => api('/ha/states?ids=' + encodeURIComponent(b.join(',')), 'GET', 8000)));
         if (parts.length) data = { ...parts[0], entities: parts.flatMap((p) => p.entities || []) };
       } catch (_) {}
     };
@@ -321,6 +322,78 @@ W.ha = {
     return { update: () => { tick(); render(); } };
   },
 };
+
+// Big button: one large key. It either runs a shortcut, or switches a Home Assistant entity (scripts and scenes run,
+// switches and lights toggle and show whether they are on). Its own label, icon, colour and picture win over the
+// shortcut's; a Home Assistant button needs no shortcut at all, and with the PC off it reaches Home Assistant through
+// the phone (HaDirect) like the Home Assistant widget, under the same rules.
+const HA_RUN_ONLY = new Set(['scene', 'script', 'button', 'input_button']);
+W.button = {
+  bare: true, needs: ['state', 'tick'],
+  create(box, { o }) {
+    const look = { cover: o.cover === true, label: o.showLabel !== false, picture: o.picture || null };
+    if (o.action === 'ha') return haButton(box, o, look);
+    const base = (cfg.shortcuts || []).find((x) => x.id === o.id) || (cfg.shortcuts || [])[0];
+    if (!base) { box.append(h('div', 'empty', t('w.pickShortcut'))); return {}; }
+    box.append(keyButton({ ...base, label: o.label || base.label, icon: o.icon || base.icon, color: o.color || base.color }, look));
+    return { update: () => applyToggles(box) };
+  },
+};
+
+function haButton(box, o, look) {
+  const entity = String(o.entity || '').trim();
+  if (!entity.includes('.')) { box.append(h('div', 'empty', t('w.button.pickEntity'))); return {}; }
+  const dom = entity.split('.')[0];
+  const stateful = HA_SWITCHABLE.has(dom) && !HA_RUN_ONLY.has(dom);
+  const s = { id: 'ha:' + entity, label: o.label || entity, icon: o.icon || HA_ICONS[dom] || '🏠', color: o.color || '#14b8a6', toggle: stateful };
+  let e = null;
+  const paint = () => {
+    const name = o.label || e?.name || entity;
+    const lbl = b.querySelector('.k-label');
+    if (lbl && lbl.textContent !== name) lbl.textContent = name;
+    if (b.hasAttribute('aria-label')) b.setAttribute('aria-label', name);
+    b.classList.toggle('on', stateful && !!e && HA_ACTIVE.has(e.state));
+    b.classList.toggle('gone', e?.state === 'unavailable');
+  };
+  const load = async () => {
+    // a run-only button with its own label needs nothing from Home Assistant until it is tapped
+    if (!stateful && o.label) return true;
+    try {
+      const r = await api('/ha/states?ids=' + encodeURIComponent(entity), 'GET', 8000);
+      e = (r.entities || []).find((x) => x.id === entity) || null;
+      paint();
+      return true;
+    } catch (_) { return false; }
+  };
+  const tap = async (btn) => {
+    haptic();
+    btn.classList.remove('ok', 'err');
+    btn.classList.add('busy');
+    let err = null;
+    try {
+      const r = await fetch(`${API}/ha/toggle/${encodeURIComponent(entity)}`, { method: 'POST', cache: 'no-store', headers: PANEL_HEADERS });
+      if (!r.ok) {
+        const msg = (await r.json().catch(() => ({}))).error;
+        err = !msg || msg === 'offline' ? t('panel.pcNoAnswer') : msg;
+      }
+    } catch (_) { err = t('panel.pcNoAnswer'); }
+    btn.classList.remove('busy');
+    btn.classList.add(err ? 'err' : 'ok');
+    if (err) toast(err, 'err');
+    setTimeout(() => btn.classList.remove('ok', 'err'), 900);
+    if (stateful && !err) {
+      // a smart plug reports its new state a second or two after Home Assistant accepts the call: show the switch at
+      // once, then let Home Assistant confirm it
+      btn.classList.toggle('on');
+      setTimeout(load, 1500);
+      setTimeout(load, 4000);
+    }
+  };
+  const b = keyButton(s, { ...look, onTap: tap });
+  box.append(b);
+  const tick = every(5000, load, 15_000);
+  return { update: () => tick() };
+}
 
 // Docker / Podman containers on the PC. Tap one for start / stop / restart (when the widget allows it).
 W.docker = {

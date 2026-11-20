@@ -134,7 +134,15 @@ class AgentLink(private val context: Context) {
     /** Forwards a request (method + path with query) to the agent over the best available route. */
     fun request(method: String, pathAndQuery: String): Reply = request(method, pathAndQuery, null, null)
 
-    fun request(method: String, pathAndQuery: String, body: ByteArray?, contentType: String?): Reply {
+    fun request(method: String, pathAndQuery: String, body: ByteArray?, contentType: String?): Reply =
+        tryRequest(method, pathAndQuery, body, contentType)
+            ?: Reply(503, "application/json", ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
+
+    /**
+     * Like [request], but null when no route reached the agent. Null means nothing was sent (no connection was made),
+     * so a POST may then go elsewhere (Home Assistant directly) without running twice.
+     */
+    fun tryRequest(method: String, pathAndQuery: String, body: ByteArray? = null, contentType: String? = null): Reply? {
         usb(method, pathAndQuery, 4000, body, contentType)?.let {
             route = Route.USB
             maybePair()
@@ -145,7 +153,7 @@ class AgentLink(private val context: Context) {
             return it
         }
         route = Route.NONE
-        return Reply(503, "application/json", ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
+        return null
     }
 
     val trackpadSocket = TrackpadSocket(this)

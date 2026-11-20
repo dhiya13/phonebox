@@ -99,6 +99,31 @@ public sealed class HomeAssistantTests : IDisposable
     }
 
     [Fact]
+    public async Task ABigButtonSetToAnEntity_MaySwitchIt_AndReadItsState()
+    {
+        var cfg = new
+        {
+            homeAssistant = new { url = _url, token = "secret" },
+            pages = new[]
+            {
+                new { id = "home", title = "Home", enabled = true, widgets = new object[]
+                {
+                    new { id = "b1", type = "button", x = 0, y = 0, w = 3, h = 2, options = new { action = "ha", entity = "light.desk" } },
+                    // set to a shortcut: its leftover entity does not count
+                    new { id = "b2", type = "button", x = 3, y = 0, w = 3, h = 2, options = new { action = "shortcut", entity = "switch.secret" } },
+                } },
+            },
+        };
+        File.WriteAllText(_configPath, JsonSerializer.Serialize(cfg));
+        var ha = new HomeAssistant(new ConfigStore(_configPath), NullLogger<HomeAssistant>.Instance);
+        var r = Json(await ha.StatesAsync(["light.desk", "switch.secret"]));
+        Assert.Equal(["light.desk"], r.GetProperty("entities").EnumerateArray().Select(e => e.GetProperty("id").GetString()).ToList());
+        Assert.Null(await ha.ToggleAsync("light.desk"));
+        Assert.NotNull(await ha.ToggleAsync("switch.secret"));
+        Assert.Equal(["/api/services/homeassistant/toggle {\"entity_id\":\"light.desk\"}"], _calls);
+    }
+
+    [Fact]
     public async Task SwitchingCallsTheRightService()
     {
         var ha = Client(control: true);

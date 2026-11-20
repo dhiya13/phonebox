@@ -56,6 +56,8 @@ class MainActivity : Activity(), SensorEventListener {
     private val dictation by lazy { Dictation(this) { script -> if (!destroyed) web.evaluateJavascript(script, null) } }
     private lateinit var link: AgentLink
     private lateinit var stream: AgentStream
+    private lateinit var haDirect: HaDirect
+    private lateinit var pictureCache: ButtonPictureCache
     @Volatile private var resumed = false
     @Volatile private var volumeKeysFlipPages = true
     private val sensors by lazy { getSystemService(Context.SENSOR_SERVICE) as SensorManager? }
@@ -74,6 +76,8 @@ class MainActivity : Activity(), SensorEventListener {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         link = AgentLink(this)
+        haDirect = HaDirect(this)
+        pictureCache = ButtonPictureCache(this)
         stream = AgentStream(link) { event, data ->
             val js = "window.onAgentStream && window.onAgentStream(${JSONObject.quote(event)}, ${JSONObject.quote(data)})"
             runOnUiThread { if (!destroyed) web.evaluateJavascript(js, null) }
@@ -181,7 +185,17 @@ class MainActivity : Activity(), SensorEventListener {
     private fun proxy(req: WebResourceRequest): WebResourceResponse {
         val path = req.url.encodedPath!!.removePrefix("/agent")
         val query = req.url.encodedQuery?.let { "?$it" } ?: ""
-        val r = link.request(req.method, path + query)
+        // Home Assistant: through the agent while it answers; while it is out of reach (the computer is off) the phone
+        // asks Home Assistant itself, if the computer allowed that (HaDirect). Once the last try found no route, Home
+        // Assistant requests skip the agent: timing out on every paired address first would outlast the widget's
+        // deadline. The panel's own polling keeps trying the agent and switches back as soon as it answers.
+        val ha = path.startsWith("/api/ha/")
+        // Big button pictures: kept on the phone, so they stay on the buttons while the computer is off
+        val picture = if (req.method == "GET" && path == "/api/button-picture") pictureCache.serve(req.url.encodedQuery) { link.tryRequest("GET", it) } else null
+        val r = picture ?: (if (ha && link.route == AgentLink.Route.NONE) haDirect.handle(req.method, path, req.url.encodedQuery) else null)
+            ?: link.tryRequest(req.method, path + query)?.also { haDirect.maybeRefresh(link) }
+            ?: (if (ha) haDirect.handle(req.method, path, req.url.encodedQuery) else null)
+            ?: AgentLink.Reply(503, "application/json", java.io.ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
         val ct = r.contentType ?: "application/octet-stream"
         val mime = ct.substringBefore(';').trim()
         val charset = if (ct.contains("charset=")) ct.substringAfter("charset=").trim() else null
@@ -264,6 +278,7 @@ class MainActivity : Activity(), SensorEventListener {
         stream.stop()
         link.trackpadSocket.close()
         link.close()
+        haDirect.close()
         (web.parent as? ViewGroup)?.removeView(web) // a WebView must be detached before destroy()
         web.destroy()
         super.onDestroy()
@@ -490,7 +505,7 @@ class MainActivity : Activity(), SensorEventListener {
         private const val ASSET_HOST = "appassets.androidplatform.net"
         private val NO_STORE = mapOf("Cache-Control" to "no-store")
         private const val PANEL_HEADER = "X-PhoneBox-Panel"
-        private val READ_ONLY_IMAGES = setOf("/agent/api/art", "/agent/api/procs/icon", "/agent/api/controls/radio-logo", "/agent/api/apps/icon", "/agent/api/discord/img", "/agent/api/shortcuts/icon")
+        private val READ_ONLY_IMAGES = setOf("/agent/api/art", "/agent/api/procs/icon", "/agent/api/controls/radio-logo", "/agent/api/apps/icon", "/agent/api/discord/img", "/agent/api/shortcuts/icon", "/agent/api/button-picture")
         private fun FORBIDDEN() = WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", NO_STORE, java.io.ByteArrayInputStream(ByteArray(0)))
     }
 }
