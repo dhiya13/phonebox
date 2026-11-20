@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.22.4 — 2026-11-20
+
+**Panel**
+- **Claude actions** widget: the Claude Code sessions that need you, each named, with big buttons. **Approve / Deny**
+  answer a permission prompt through the same approval as the full-screen card (which the widget replaces while it is
+  on screen). **Continue / Retry / Done** answer a session that finished a turn while you were away from the PC: the
+  hook now also installs a Claude Code `Stop` hook that keeps that one session waiting for the phone (10 minutes by
+  default, Settings › General › Claude Code permission prompts) and hands it the answer, so nothing is ever typed into
+  a window. The wait ends as soon as you touch the PC. Off until the widget's **Allow answering from the phone** is on;
+  the agent checks that option for every answer. A hook installed earlier shows **Update hook** in Settings.
+
 ## 0.9.22.1 — 2026-11-20
 
 First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream

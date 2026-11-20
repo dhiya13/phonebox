@@ -9,8 +9,12 @@ public static class PanelWidgets
     /// is no fallback to another widget, so each widget's own options decide.
     /// </summary>
     public static WidgetConfig? Find(AgentConfig c, string? deviceId, string? key, string type) => string.IsNullOrEmpty(key) ? null
-        : c.PagesFor(deviceId).Where(p => p.Enabled).SelectMany(p => (p.Widgets ?? []).SelectMany(w =>
-                new[] { (Key: p.Id + "/" + w.Id, W: w) }.Concat(StackWidgets.Children(w).Where(ch => ch.Enabled)
-                    .Select(ch => (Key: p.Id + "/" + w.Id + ":" + ch.Id, W: new WidgetConfig { Id = ch.Id, Type = ch.Type, Options = ch.Options })))))
-            .FirstOrDefault(x => x.W.Type == type && x.Key == key).W;
+        : All(c.PagesFor(deviceId), type).FirstOrDefault(x => x.Key == key).Widget;
+
+    /// <summary>Every widget of <paramref name="type"/> on the enabled pages given (enabled Smart Stack cards included), with its key.</summary>
+    public static IEnumerable<(string Key, WidgetConfig Widget)> All(IEnumerable<PageConfig> pages, string type) =>
+        pages.Where(p => p.Enabled).SelectMany(p => (p.Widgets ?? []).SelectMany(w =>
+                new[] { (Key: p.Id + "/" + w.Id, Widget: w) }.Concat(StackWidgets.Children(w).Where(ch => ch.Enabled)
+                    .Select(ch => (Key: p.Id + "/" + w.Id + ":" + ch.Id, Widget: new WidgetConfig { Id = ch.Id, Type = ch.Type, Options = ch.Options })))))
+            .Where(x => x.Widget.Type == type);
 }
