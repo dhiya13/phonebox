@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.22.6 — 2026-11-20
+
+**Panel**
+- Big button: a switch that is on now just lights up, without the green dot in the corner. Shortcut grid keys keep it.
+
 ## 0.9.22.1 — 2026-11-20
 
 First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream
