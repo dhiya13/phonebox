@@ -13,7 +13,7 @@
     <Product>PhoneBox</Product>
     <Company>PhoneBox</Company>
     <Description>PhoneBox desktop agent: feeds the PhoneBox Android desk panel over USB or Wi-Fi.</Description>
-    <Version>0.9.22.6</Version>
+    <Version>0.9.22.2</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
@@ -39,7 +39,7 @@
   </ItemGroup>
 
   <ItemGroup Condition="!$(TargetFramework.Contains('-windows'))">
-    <Compile Remove="Tray.cs;JobObject.cs;AudioControl.cs;MediaMonitor.cs" />
+    <Compile Remove="Tray.cs;JobObject.cs;AudioControl.cs;MediaMonitor.cs;PhoneWebcam.Windows.cs" />
   </ItemGroup>
 
   <ItemGroup>

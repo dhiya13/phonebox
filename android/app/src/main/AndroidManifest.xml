@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Dictation widget only: asked for the first time its microphone button is tapped -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Phone webcam widget only: asked for the first time its camera is switched on -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.front" android:required="false" />
 
     <!-- Android 11+: the speech recognizer has to be visible to the app (Dictation widget) -->
     <queries>

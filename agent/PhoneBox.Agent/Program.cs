@@ -70,6 +70,7 @@ builder.Services.AddSingleton<ApprovalStore>();
 builder.Services.AddSingleton<HomeAssistant>();
 builder.Services.AddSingleton<AppConsole>();
 builder.Services.AddSingleton<Dictation>();
+builder.Services.AddSingleton<PhoneWebcam>();
 builder.Services.AddSingleton<SpectrumAnalyzer>();
 AddMonitor<SystemMonitor>(builder.Services);
 AddMonitor<MediaMonitor>(builder.Services);
@@ -560,6 +561,36 @@ app.MapPost("/api/dictate", async (string? widget, string? text, HttpRequest req
     var (status, error) = await dictation.TypeAsync(req.Headers["X-PhoneBox-Device"].ToString(), widget, text, ct);
     return error is null ? Results.Ok(new { ok = true }) : Results.Json(new { error }, statusCode: status);
 });
+
+// Phone webcam (widget): the phone's camera pictures, sent by the app itself (not the WebView) while the widget's camera
+// is on, only for a widget that allows it. They go into OBS Virtual Camera (Windows) and the local MJPEG stream; the
+// latest one is kept in memory only. Status, MJPEG and the latest picture are local only (not on the Wi-Fi allow-list).
+app.MapPost("/api/webcam/frame", async (string? widget, HttpRequest req, PhoneWebcam webcam, CancellationToken ct) =>
+{
+    if (req.ContentLength is > PhoneWebcam.MaxFrameBytes) return Results.Json(new { error = "the picture is too large" }, statusCode: 413);
+    using var ms = new MemoryStream();
+    var buffer = new byte[64 * 1024];
+    int n;
+    while ((n = await req.Body.ReadAsync(buffer, ct)) > 0)
+    {
+        if (ms.Length + n > PhoneWebcam.MaxFrameBytes) return Results.Json(new { error = "the picture is too large" }, statusCode: 413);
+        ms.Write(buffer, 0, n);
+    }
+    var (status, body) = webcam.Accept(req.Headers["X-PhoneBox-Device"].ToString(), widget, ms.ToArray());
+    return Results.Json(body, statusCode: status);
+});
+app.MapPost("/api/webcam/stop", (HttpRequest req, PhoneWebcam webcam) =>
+{
+    webcam.Stop(req.Headers["X-PhoneBox-Device"].ToString());
+    return Results.Ok(new { ok = true });
+});
+app.MapGet("/api/webcam/status", (PhoneWebcam webcam) => Results.Json(webcam.Status()));
+app.MapGet("/api/webcam/latest.jpg", (HttpResponse res, PhoneWebcam webcam) =>
+{
+    res.Headers["X-Content-Type-Options"] = "nosniff";
+    return webcam.Latest() is { } jpeg ? Results.Bytes(jpeg, "image/jpeg") : Results.NoContent();
+});
+app.MapGet("/api/webcam/mjpeg", (HttpResponse res, PhoneWebcam webcam, CancellationToken ct) => webcam.MjpegAsync(res, ct));
 
 // App console (widget): the focused app's profile (labels only) and its keys, by profile id and slot.
 app.MapGet("/api/console", (string? widget, HttpRequest req, AppConsole console) =>
