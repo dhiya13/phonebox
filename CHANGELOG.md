@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.22.4 — 2026-11-20
+## 0.9.22.8 — 2026-11-20
 
 **Panel**
 - **Claude actions** widget: the Claude Code sessions that need you, each named, with big buttons. **Approve / Deny**

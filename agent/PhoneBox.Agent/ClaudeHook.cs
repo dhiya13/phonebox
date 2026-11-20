@@ -136,7 +136,7 @@ public static class ClaudeHook
 
     internal static bool Installed(string path) => HasHook(path, "PermissionRequest");
 
-    /// <summary>The Stop hook (Continue / Retry from the Claude actions widget) is there too; hooks installed before 0.9.22.4 lack it.</summary>
+    /// <summary>The Stop hook (Continue / Retry from the Claude actions widget) is there too; hooks installed before 0.9.22.8 lack it.</summary>
     public static bool StopInstalled() => StopInstalled(SettingsPath);
 
     internal static bool StopInstalled(string path) => HasHook(path, "Stop");

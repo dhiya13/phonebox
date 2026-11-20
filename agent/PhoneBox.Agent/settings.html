@@ -3250,7 +3250,7 @@ async function loadInfo() {
     renderUpdate(await (await fetch('/api/update')).json());
     renderWebhooks(lan);
     const hk = await (await fetch('/api/claude/hook')).json();
-    // a hook installed before 0.9.22.4 has no Stop entry (Continue / Retry): installing again adds it
+    // a hook installed before 0.9.22.8 has no Stop entry (Continue / Retry): installing again adds it
     const stale = hk.installed && !hk.stop;
     $('hookState').textContent = stale ? t('s.claude.stopMissing', { path: hk.path })
       : hk.installed ? t('s.claude.installedIn', { path: hk.path }) : t('s.claude.notInstalled');

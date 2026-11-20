@@ -217,7 +217,7 @@ or its folder, with big buttons:
   step that failed again, and **Done** lets it stop. The answer goes back through that session's own hook call, so it
   can only reach that session: nothing is typed into any window. The wait ends with nothing, and Claude Code stops as
   usual, as soon as you touch the PC, the phone goes away, the widget no longer allows it or the time runs out. A
-  hook installed before 0.9.22.4 has no `Stop` entry: the settings page then offers **Update hook**.
+  hook installed before 0.9.22.8 has no `Stop` entry: the settings page then offers **Update hook**.
 - Sessions waiting for something the phone can't answer (a question, or a prompt the hook doesn't see) are listed
   without buttons, so you know to go to the PC.
 
