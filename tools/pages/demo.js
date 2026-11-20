@@ -611,7 +611,7 @@
     }
     // spectrum bars: like the agent, frames only for a widget on an enabled page; a made-up beat with a bass kick here
     if (path === '/api/spectrum') {
-      const shown = shownWidgets(await config()).some((w) => w.type === 'spectrum');
+      const shown = shownWidgets(await config()).some((w) => w.type === 'spectrum' || w.type === 'visualizer');
       const s = Date.now() / 1000, kick = Math.max(0, Math.cos(s * Math.PI * 2 * 2)) ** 6;
       const b = shown ? Array.from({ length: 48 }, (_, i) => Math.round(Math.max(0, Math.min(100,
         78 - i * 0.7 + (i < 8 ? kick * 22 : 0) + 14 * Math.sin(s * (2.1 + i * 0.37) + i) + 6 * Math.sin(s * 9.7 + i * 1.3))))) : null;
