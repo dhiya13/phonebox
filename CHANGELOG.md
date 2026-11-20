@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.22.6 — 2026-11-20
+
+**Panel**
+- Big button: a switch that is on now just lights up, without the green dot in the corner. Shortcut grid keys keep it.
+
 ## 0.9.22.5 — 2026-11-20
 
 **Agent**
