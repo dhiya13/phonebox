@@ -76,10 +76,10 @@ public sealed class SpectrumAnalyzerTests : IDisposable
     public void OnlyFullWindowsAreAnalyzed() =>
         Assert.Throws<ArgumentException>(() => SpectrumAnalyzer.Analyze(new float[100], 48000));
 
-    private SpectrumAnalyzer Analyzer(bool widget, bool pageEnabled = true)
+    private SpectrumAnalyzer Analyzer(bool widget, bool pageEnabled = true, string type = "spectrum")
     {
         var path = Path.Combine(_dir, "config.json");
-        var widgets = widget ? """[{"id":"s","type":"spectrum","x":0,"y":0,"w":6,"h":3}]""" : "[]";
+        var widgets = widget ? $$"""[{"id":"s","type":"{{type}}","x":0,"y":0,"w":6,"h":3}]""" : "[]";
         File.WriteAllText(path, $$"""
             {"pages":[{"id":"p","title":"P","enabled":{{(pageEnabled ? "true" : "false")}},"widgets":{{widgets}} },
                       {"id":"q","title":"Q","widgets":[{"id":"c","type":"clock","x":0,"y":0,"w":6,"h":4}]}]}
@@ -105,6 +105,17 @@ public sealed class SpectrumAnalyzerTests : IDisposable
     {
         using var shown = Analyzer(widget: true);
         Assert.True(shown.Shown());
+    }
+
+    [Fact]
+    public void TheAudioVisualizerUsesTheSameCapture()
+    {
+        using var shown = Analyzer(widget: true, type: SpectrumAnalyzer.VisualizerType);
+        Assert.True(shown.Shown());
+
+        using var hidden = Analyzer(widget: true, pageEnabled: false, type: SpectrumAnalyzer.VisualizerType);
+        Assert.False(hidden.Want());
+        Assert.False(hidden.Active);
     }
 
     [Fact]

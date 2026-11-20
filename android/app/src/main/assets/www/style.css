@@ -1274,6 +1274,11 @@ body.controls-top .ap-foot { order: -1; margin-bottom: 4px; }
 .w-spectrum .spec-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
 .w-spectrum .spec-msg { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; pointer-events: none; }
 .w-spectrum .spec-msg[hidden] { display: none; }
+.w-visualizer { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; position: relative; }
+.w-visualizer .viz-wrap { flex: 1; min-height: 0; position: relative; }
+.w-visualizer .viz-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
+.w-visualizer .viz-msg { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; pointer-events: none; }
+.w-visualizer .viz-msg[hidden] { display: none; }
 
 
 /* Note editor (tap a Note widget on the phone) */
