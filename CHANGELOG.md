@@ -11,6 +11,19 @@
   a window. The wait ends as soon as you touch the PC. Off until the widget's **Allow answering from the phone** is on;
   the agent checks that option for every answer. A hook installed earlier shows **Update hook** in Settings.
 
+## 0.9.22.6 — 2026-11-20
+
+**Panel**
+- Big button: a switch that is on now just lights up, without the green dot in the corner. Shortcut grid keys keep it.
+
+## 0.9.22.5 — 2026-11-20
+
+**Agent**
+- Windows: music that keeps playing after a video started over it stops is still shown as playing. Before, the agent
+  followed only Windows' "current" media session, which stays on the stopped video, so a "media playing" rule ended
+  and the panel went back to its home page while the music played on. A playing session now wins over a current one
+  that is not playing (the one already on screen first), and play / pause / next act on the session the panel shows.
+
 ## 0.9.22.1 — 2026-11-20
 
 First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream
