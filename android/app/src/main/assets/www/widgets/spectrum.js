@@ -22,13 +22,15 @@ function frame(d) {
 }
 window.addEventListener('phonebox-spectrum', (e) => frame(e.detail));
 
-// Every mounted Spectrum bars widget, with its page. A widget counts as on screen only while it is really visible:
+// Every mounted Spectrum bars and Audio visualizer widget (visualizer.js), with its page. A widget counts as on screen only while it is really visible:
 // not under the night screen, on the current page, and not in a Smart Stack card that is not showing. Mounted is not
 // enough: neighbouring pages and hidden stack cards stay mounted, and asking for them would keep the agent capturing.
 const mountedBars = new Set();
-const shows = (m) => !document.body.classList.contains('night')
+export const shows = (m) => !document.body.classList.contains('night')
   && m.box.isConnected && pages[curPage] === m.page && !m.box.closest('.stack-item:not(.active)');
 const onScreen = () => [...mountedBars].some(shows);
+/** A widget that draws the frames: { box, page }; it keeps the agent capturing while it is on screen. */
+export const watchSpectrum = (m) => mountedBars.add(m);
 
 // Keep the agent capturing while a visualizer is on screen (it stops by itself a few seconds after the last request),
 // and poll the frames when there is no live stream (desktop live preview, or the stream is reconnecting).

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.22.7 — 2026-11-20
+
+**Panel**
+- **Audio visualizer** (Windows): a calm, minimal visualizer of the sound the PC is playing, next to the Spectrum bars.
+  Three styles (smooth bars, a mirrored wave, a ring), the panel's accent colour or one of its own, a sensitivity
+  setting and the number of bars. It eases smoothly between frames and rests on a faint line when nothing plays, then
+  stops drawing. It uses the same capture as Spectrum bars: one capture feeds both, and it runs only while one of them
+  is on screen on an enabled page.
+
 ## 0.9.22.6 — 2026-11-20
 
 **Panel**
