@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.22.3 — 2026-11-20
+## 0.9.22.7 — 2026-11-20
 
 **Panel**
 - **Audio visualizer** (Windows): a calm, minimal visualizer of the sound the PC is playing, next to the Spectrum bars.
@@ -8,6 +8,19 @@
   setting and the number of bars. It eases smoothly between frames and rests on a faint line when nothing plays, then
   stops drawing. It uses the same capture as Spectrum bars: one capture feeds both, and it runs only while one of them
   is on screen on an enabled page.
+
+## 0.9.22.6 — 2026-11-20
+
+**Panel**
+- Big button: a switch that is on now just lights up, without the green dot in the corner. Shortcut grid keys keep it.
+
+## 0.9.22.5 — 2026-11-20
+
+**Agent**
+- Windows: music that keeps playing after a video started over it stops is still shown as playing. Before, the agent
+  followed only Windows' "current" media session, which stays on the stopped video, so a "media playing" rule ended
+  and the panel went back to its home page while the music played on. A playing session now wins over a current one
+  that is not playing (the one already on screen first), and play / pause / next act on the session the panel shows.
 
 ## 0.9.22.1 — 2026-11-20
 

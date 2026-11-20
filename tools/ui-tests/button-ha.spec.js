@@ -42,6 +42,8 @@ test('a switch shows its state, takes the entity name, and flips when tapped', a
   await expect(key(0)).toHaveClass(/toggle/);
   await expect(key(0)).toHaveClass(/\bon\b/);
   await expect(key(0).locator('.k-label')).toHaveText('Desk lamp');
+  // "on" shows as a lit key, without the shortcut grid's corner dot
+  expect(await key(0).evaluate((el) => getComputedStyle(el, '::before').display)).toBe('none');
   await key(0).click();
   await expect(key(0)).not.toHaveClass(/\bon\b/);
   await key(0).click();

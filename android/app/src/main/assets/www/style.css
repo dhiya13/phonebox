@@ -600,6 +600,8 @@ html.beat-3 .sess.busy .st, html.beat-4 .sess.shell .st, html.beat-2 .sess.waiti
 .key.toggle::before { content: ""; position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: rgba(255, 255, 255, .16); transition: background .2s, box-shadow .2s; }
 .key.toggle.on::before { background: #4ade80; box-shadow: 0 0 9px #4ade80; }
 .key.toggle.on { filter: brightness(1.18) saturate(1.2); }
+/* a Big button shows "on" by lighting up only, without the corner dot */
+.w-button .key.toggle::before { display: none; }
 
 /* ---------- world clocks ---------- */
 .w-worldclock { padding: 6px 4px; }
