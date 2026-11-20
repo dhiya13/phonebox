@@ -24,7 +24,9 @@ public sealed class HomeAssistant(ConfigStore config, ILogger<HomeAssistant> log
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     // only widgets on enabled pages count, for reading states as for switching: hiding the page or removing the widget turns both off
-    private static IEnumerable<WidgetConfig> Widgets(AgentConfig cfg) => cfg.Widgets(enabledPagesOnly: true).Where(w => w.Type == "ha");
+    // and Big buttons set to a Home Assistant entity
+    private static IEnumerable<WidgetConfig> Widgets(AgentConfig cfg) => cfg.Widgets(enabledPagesOnly: true)
+        .Where(w => w.Type == "ha" || (w.Type == "button" && w.Str("action") == "ha"));
 
     private static bool ControlAllowed(AgentConfig cfg, string id) => Widgets(cfg).Any(w => ItemsOf(w).Any(i => i.Control && i.Id == id));
 
@@ -38,6 +40,12 @@ public sealed class HomeAssistant(ConfigStore config, ILogger<HomeAssistant> log
     /// </summary>
     public static IEnumerable<(string Id, bool Control)> ItemsOf(WidgetConfig w)
     {
+        if (w.Type == "button")
+        {
+            // a Big button exists to be tapped: its one entity may always be switched (a button set to a shortcut has none)
+            if (w.Str("action") == "ha" && w.Str("entity")?.Trim() is { } entity && entity.Contains('.')) yield return (entity, true);
+            yield break;
+        }
         var widgetControl = w.Bool("control") == true;
         if (w.Opt("items") is { ValueKind: JsonValueKind.Array } items && items.GetArrayLength() > 0)
         {
@@ -59,6 +67,33 @@ public sealed class HomeAssistant(ConfigStore config, ILogger<HomeAssistant> log
     }
 
     public static IEnumerable<string> EntitiesOf(WidgetConfig w) => ItemsOf(w).Select(i => i.Id);
+
+    /// <summary>
+    /// What a paired phone needs to reach Home Assistant without this computer: the address and token for phones
+    /// (falling back to this computer's), and the entities the widgets on enabled pages list, each with whether it may
+    /// be switched — the same rule <see cref="ToggleAsync"/> applies. Nothing but <c>enabled = false</c> when the
+    /// option is off or incomplete, which tells the phone to forget what it stored.
+    /// </summary>
+    public static object DirectFor(AgentConfig cfg)
+    {
+        var ha = cfg.HomeAssistant;
+        var url = ha.PhoneUrl ?? ha.Url;
+        var token = ha.PhoneToken ?? ha.Token;
+        if (!ha.PhoneDirect || string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(token)
+            || !Uri.TryCreate(url, UriKind.Absolute, out var address) || address.Scheme is not ("http" or "https"))
+            return new { enabled = false };
+        // an entity listed by several widgets may be switched when any of them allows it
+        var items = new Dictionary<string, bool>();
+        foreach (var (id, control) in Widgets(cfg).SelectMany(ItemsOf))
+            items[id] = (items.TryGetValue(id, out var c) && c) || control;
+        return new
+        {
+            enabled = true,
+            url = url.TrimEnd('/'),
+            token,
+            items = items.Select(kv => new { id = kv.Key, control = kv.Value }).ToList(),
+        };
+    }
 
     /// <summary>States of the requested entities (only those used by a widget), refreshed at most every 3 seconds.</summary>
     public async Task<object> StatesAsync(IEnumerable<string> ids)

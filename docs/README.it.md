@@ -13,6 +13,7 @@
   <a href="README.nl.md">Nederlands</a> ·
   <a href="README.pl.md">Polski</a> ·
   <a href="README.ru.md">Русский</a> ·
+  <a href="README.el.md">Ελληνικά</a> ·
   <a href="README.vi.md">Tiếng Việt</a> ·
   <a href="README.zh.md">中文 (简体)</a>
 </p>
@@ -38,7 +39,7 @@ Windows, Linux e macOS. Nessun root, nessun account PhoneBox e nessun servizio c
 <p align="center"><img src="hero-0.6.png" width="900" alt="PhoneBox su tre telefoni"><br>
 <sub>Layout di esempio con dati dimostrativi.</sub></p>
 
-PhoneBox abbina un'**app Android** a schermo intero a un piccolo **agente desktop**. Progetta il tuo pannello nell'editor visivo browser: **123 widget**, **30 modelli**, più pagine e anteprima live.
+PhoneBox abbina un'**app Android** a schermo intero a un piccolo **agente desktop**. Progetta il tuo pannello nell'editor visivo browser: **124 widget**, **30 modelli**, più pagine e anteprima live.
 
 ## Cosa puoi fare
 

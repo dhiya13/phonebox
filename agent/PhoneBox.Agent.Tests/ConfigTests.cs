@@ -25,6 +25,46 @@ public class ConfigTests
         Assert.NotEqual(c.Lan.Token, c.Lan.WebhookToken);
     }
 
+    // The panel converts the forecast itself, so the only values the agent hands it are the two it knows how to show.
+    [Theory]
+    [InlineData("""{"weather":{"city":"Tallinn","lat":59.437,"lon":24.745}}""", "celsius")]
+    [InlineData("""{"weather":{"unit":"fahrenheit"}}""", "fahrenheit")]
+    [InlineData("""{"weather":{"unit":" Fahrenheit "}}""", "fahrenheit")]
+    [InlineData("""{"weather":{"unit":"kelvin"}}""", "celsius")]
+    [InlineData("""{"weather":{"unit":null}}""", "celsius")]
+    [InlineData("""{"weather":{"city":"Oslo","unit":123}}""", "celsius")]
+    [InlineData("""{"weather":{"city":"Oslo","unit":true}}""", "celsius")]
+    [InlineData("""{"weather":{"city":"Oslo","unit":{"deep":[1]}}}""", "celsius")]
+    public void WeatherUnitDefaultsToCelsiusAndReachesThePhone(string json, string expected)
+    {
+        var c = Load(json);
+        Assert.Equal(expected, c.Weather.Unit);
+        // a bad unit costs only the unit: the rest of the weather section (and the file) still loads
+        if (json.Contains("Oslo")) Assert.Equal("Oslo", c.Weather.City);
+        var weather = JsonSerializer.SerializeToElement(c.ToPublic(), ConfigStore.WriteOpts).GetProperty("weather");
+        Assert.Equal(expected, weather.GetProperty("unit").GetString());
+    }
+
+    // The model goes into the phone's forecast URL, so only the names the settings offer get through.
+    [Theory]
+    [InlineData("""{"weather":{"city":"Tallinn","lat":59.437,"lon":24.745}}""", "")]
+    [InlineData("""{"weather":{"model":"gfs_seamless"}}""", "gfs_seamless")]
+    [InlineData("""{"weather":{"model":" GFS_Seamless "}}""", "gfs_seamless")]
+    [InlineData("""{"weather":{"model":"ecmwf_ifs025"}}""", "ecmwf_ifs025")]
+    [InlineData("""{"weather":{"model":"gfs_seamless&daily=x"}}""", "")]
+    [InlineData("""{"weather":{"model":"accuweather"}}""", "")]
+    [InlineData("""{"weather":{"model":null}}""", "")]
+    [InlineData("""{"weather":{"city":"Oslo","model":42}}""", "")]
+    [InlineData("""{"weather":{"city":"Oslo","model":["gfs_seamless"]}}""", "")]
+    public void WeatherModelIsOneOfTheOfferedModelsOrBestMatch(string json, string expected)
+    {
+        var c = Load(json);
+        Assert.Equal(expected, c.Weather.Model);
+        if (json.Contains("Oslo")) Assert.Equal("Oslo", c.Weather.City);
+        var weather = JsonSerializer.SerializeToElement(c.ToPublic(), ConfigStore.WriteOpts).GetProperty("weather");
+        Assert.Equal(expected, weather.GetProperty("model").GetString());
+    }
+
     [Fact]
     public void BurnInProtectionIsOffByDefaultAndTheDimTimeIsClamped()
     {
@@ -291,6 +331,11 @@ public class LanTests
     [InlineData("/api/claude/hook", false)]
     [InlineData("/api/obs-test", false)]
     [InlineData("/api/ha/test", false)]
+    [InlineData("/api/ha/direct", true)]
+    [InlineData("/api/button-picture", true)]
+    [InlineData("/api/settings/button-picture", false)]
+    [InlineData("/api/ha/direct/x", false)]
+    [InlineData("/api/ha/entities", false)]
     [InlineData("/api/phones", false)]
     [InlineData("/api/rules/test", false)]
     [InlineData("/panel/main.js", false)]

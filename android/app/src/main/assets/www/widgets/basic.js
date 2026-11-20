@@ -1,4 +1,4 @@
-import { $, API, D, LEVEL_COLOR, LOCALE, mediaHtml, METRICS, PANEL_HEADERS, PREVIEW, Q_STYLE, S_ORDER, ago, api, averageColor, buildLayout, buzz, cfg, cfgVersion, chart, color, cssVar, currentProcessesSort, emit, fillIcon, fmtClock, fmtDur, fmtHM, fmtMem, fmtReset, fmtTime, fmtValue, gotoProcesses, gpuMem, gpusOf, h, haptic, hasProcessesPage, hist, hour12, keyButton, levelOf, media, metricText, online, openSheet, paceInfo, pad, prRow, pushView, quotaProviders, r1, registerProcessesSorter, renderStatus, ringSvg, setArtColor, configMark, configReadSince, localWriteStored, setMediaState, setVolDragging, shortDur, shortGpu, store, t, tick, toast, volDragging, wxBlock, wxIcon } from '../main.js';
+import { $, API, D, LEVEL_COLOR, LOCALE, mediaHtml, METRICS, PANEL_HEADERS, PREVIEW, Q_STYLE, S_ORDER, ago, api, averageColor, buildLayout, buzz, cfg, cfgVersion, chart, color, cssVar, currentProcessesSort, emit, fillIcon, fmtClock, fmtDur, fmtHM, fmtMem, fmtReset, fmtTime, fmtValue, gotoProcesses, gpuMem, gpusOf, h, en, haptic, hasProcessesPage, hist, hour12, icon, keyButton, labelled, levelOf, media, metricText, online, openSheet, paceInfo, pad, prRow, pushView, quotaProviders, r1, registerProcessesSorter, renderStatus, ringSvg, setArtColor, configMark, configReadSince, localWriteStored, setMediaState, setVolDragging, shortDur, shortGpu, store, t, tick, toast, volDragging, wxBlock, wxDeg, wxIcon, emo, rich } from '../main.js';
 import { W } from '../registry.js';
 import { invalidateDeckState } from './controls.js';
 
@@ -20,10 +20,10 @@ W.clock = {
   bare: true, needs: ['tick', 'state', 'weather', 'quotas', 'work'],
   create(box, { o }) {
     const status = o.status !== false ? h('div', 'status') : null;
-    const hh = h('span', 'hh', '--'), mm = h('span', 'mm', '--'), ss = h('span', 'sec'), ap = h('span', 'ap');
+    const hh = h('span', 'hh', '--'), colon = h('span', 'colon', ':'), mm = h('span', 'mm', '--'), ss = h('span', 'sec'), ap = h('span', 'ap');
     const date = o.date !== false ? h('div', 'date') : null;
     const wx = o.weather !== false ? wxBlock() : null;
-    box.append(status || '', h('div', 'clock', hh, h('span', 'colon', ':'), mm, ss, ap), date || '', wx || '');
+    box.append(status || '', h('div', 'clock', hh, colon, mm, ss, ap), date || '', wx || '');
     box.style.setProperty('--tf', (0.84 - (status ? 0.1 : 0) - (date ? 0.11 : 0) - (wx ? 0.2 : 0)).toFixed(2));
     return {
       // without the weather line the clock must not make the panel fetch the weather
@@ -36,10 +36,13 @@ W.clock = {
           ap.textContent = h12 ? (H < 12 ? 'AM' : 'PM') : '';
           mm.textContent = pad(now.getMinutes());
           ss.textContent = cfg.display?.showSeconds === false ? '' : pad(now.getSeconds());
+          // the colon blinks once a second from here, not from a CSS animation: a running animation makes the browser draw a frame
+          // on every display refresh (120 a second on some phones) for something that changes once a second
+          colon.classList.toggle('dim', now.getSeconds() % 2 === 1);
           if (date) date.textContent = now.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
-          if (status && now.getSeconds() % 30 === 0) renderStatus(status); // battery
+          if (status && now.getSeconds() % 30 === 0) renderStatus(status, o); // battery
         } else if (kind === 'weather') wx?.update();
-        else if (status) renderStatus(status);
+        else if (status) renderStatus(status, o);
       },
     };
   },
@@ -59,7 +62,7 @@ W.forecast = {
   create(box, { o }) {
     const daily = o.mode === 'daily';
     const row = h('div', 'fc');
-    box.append(h('div', 'w-title', daily ? '7-day forecast' : 'Next hours', h('span', 'w-sub', '')), row);
+    box.append(h('div', 'w-title', en(daily ? '7-day forecast' : 'Next hours'), h('span', 'w-sub', '')), row);
     return {
       update() {
         const w = D.weather;
@@ -73,11 +76,13 @@ W.forecast = {
         if (daily) {
           const d = w.daily;
           for (let i = 0; i < Math.min(n, d.time.length); i++) {
+            // some models (Météo-France, CMA) forecast fewer than 7 days and send null for the rest: stop there, not at "0°"
+            if (d.temperature_2m_max?.[i] == null) break;
             const day = i === 0 ? t('time.today') : new Date(d.time[i] + 'T12:00').toLocaleDateString(LOCALE, { weekday: 'short' });
             const rain = d.precipitation_probability_max?.[i];
-            cells.push(h('div', 'fc-i', h('span', 'fc-t', day), h('span', 'fc-ic', wxIcon(d.weather_code[i])),
-              h('span', 'fc-v', Math.round(d.temperature_2m_max[i]) + '°', h('small', null, ' ' + Math.round(d.temperature_2m_min[i]) + '°')),
-              h('span', 'fc-r', rain >= 20 ? `💧${rain}%` : '')));
+            cells.push(h('div', 'fc-i', h('span', 'fc-t', day), h('span', 'fc-ic', emo(wxIcon(d.weather_code[i]))),
+              h('span', 'fc-v', wxDeg(d.temperature_2m_max[i]) + '°', h('small', null, ' ' + wxDeg(d.temperature_2m_min[i]) + '°')),
+              h('span', 'fc-r', rain >= 20 ? rich(`💧${rain}%`) : '')));
           }
         } else {
           const hr = w.hourly;
@@ -86,10 +91,10 @@ W.forecast = {
           const step = n >= 10 ? 1 : 2;
           for (let k = 0; k < n; k++) {
             const i = start + k * step;
-            if (i >= hr.time.length) break;
+            if (i >= hr.time.length || hr.temperature_2m?.[i] == null) break;
             const rain = hr.precipitation_probability?.[i];
-            cells.push(h('div', 'fc-i', h('span', 'fc-t', k === 0 ? 'Now' : hr.time[i].slice(11, 13)), h('span', 'fc-ic', wxIcon(hr.weather_code[i], hr.is_day?.[i])),
-              h('span', 'fc-v', Math.round(hr.temperature_2m[i]) + '°'), h('span', 'fc-r', rain >= 20 ? `💧${rain}%` : '')));
+            cells.push(h('div', 'fc-i', h('span', 'fc-t', k === 0 ? 'Now' : hr.time[i].slice(11, 13)), h('span', 'fc-ic', emo(wxIcon(hr.weather_code[i], hr.is_day?.[i]))),
+              h('span', 'fc-v', wxDeg(hr.temperature_2m[i]) + '°'), h('span', 'fc-r', rain >= 20 ? rich(`💧${rain}%`) : '')));
           }
         }
         row.replaceChildren(...cells);
@@ -128,13 +133,65 @@ W.media = {
         emit('tick');
       } catch (_) {}
     }));
-    q('.bar').addEventListener('click', async (e) => {
-      if (!media || !media.durMs || !media.canSeek) return;
-      const r = e.currentTarget.getBoundingClientRect();
-      const ms = Math.round(((e.clientX - r.left) / r.width) * media.durMs);
+    // The position bar is a slider. Holding it (touch, mouse) or moving it with the arrow keys shows a bubble with the time
+    // the song will continue from; it seeks on release, not while moving. Meanwhile the once-a-second state and the 250 ms
+    // refresh leave the bar alone (see update()).
+    const bar = q('.bar'), tip = q('.scrub-tip');
+    let scrub = null, seekTimer = 0, ariaSec = -1; // scrub: { id, ms, key } while held
+    const canScrub = () => !!(media && media.durMs > 0 && media.canSeek);
+    // which song a held bar belongs to: a different one underneath (next track) cancels the scrub instead of seeking it
+    const trackKey = () => (media ? [media.app, media.title, media.durMs].join('\n') : '');
+    const paintAria = (ms) => {
+      bar.setAttribute('aria-valuenow', Math.round(ms / 1000));
+      bar.setAttribute('aria-valuetext', fmtTime(ms));
+    };
+    const nowMs = () => Math.min(media.durMs, media.posMs + (media.playing ? performance.now() - media.at : 0));
+    const msFrom = (clientX) => {
+      const r = bar.getBoundingClientRect();
+      return Math.round(Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * media.durMs);
+    };
+    const paintScrub = (ms) => {
+      const pct = (ms / media.durMs) * 100;
+      q('.fill').style.width = pct + '%';
+      q('.m-pos').textContent = tip.textContent = fmtTime(ms);
+      bar.style.setProperty('--tip', pct + '%');
+      paintAria(ms);
+    };
+    const endScrub = (commit) => {
+      clearTimeout(seekTimer);
+      if (!scrub) return;
+      const { ms, key } = scrub;
+      scrub = null;
+      bar.classList.remove('scrubbing');
+      if (!commit || !canScrub() || key !== trackKey()) return; // checked again: the song may have changed since it was held
       haptic();
-      media.posMs = ms; media.at = performance.now();
-      try { await api('/media/seek?ms=' + ms, 'POST'); } catch (_) {}
+      // the bar stays where it was put until the agent has caught up: its next samples still hold the old position
+      media.posMs = ms; media.at = performance.now(); media.hold = performance.now() + 2500;
+      api('/media/seek?ms=' + ms, 'POST').catch(() => {});
+    };
+    const startScrub = (id, ms) => { scrub = { id, ms, key: trackKey() }; bar.classList.add('scrubbing'); paintScrub(ms); };
+    bar.addEventListener('pointerdown', (e) => {
+      if (!canScrub() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      clearTimeout(seekTimer);
+      startScrub(e.pointerId, msFrom(e.clientX));
+      try { bar.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    bar.addEventListener('pointermove', (e) => {
+      if (scrub && e.pointerId === scrub.id) { scrub.ms = msFrom(e.clientX); paintScrub(scrub.ms); }
+    });
+    bar.addEventListener('pointerup', (e) => { if (scrub && e.pointerId === scrub.id) endScrub(true); });
+    bar.addEventListener('pointercancel', () => endScrub(false));
+    bar.addEventListener('lostpointercapture', () => endScrub(false)); // a no-op after pointerup: the scrub has ended
+    bar.addEventListener('keydown', (e) => {
+      const step = { ArrowRight: 5000, ArrowUp: 5000, ArrowLeft: -5000, ArrowDown: -5000, PageUp: 30000, PageDown: -30000 }[e.key];
+      if (step === undefined && e.key !== 'Home' && e.key !== 'End') return;
+      if (!canScrub()) return;
+      e.preventDefault();
+      const base = scrub ? scrub.ms : nowMs();
+      const ms = e.key === 'Home' ? 0 : e.key === 'End' ? Math.max(0, media.durMs - 1000) : Math.min(media.durMs, Math.max(0, base + step));
+      startScrub(-1, ms);
+      clearTimeout(seekTimer);
+      seekTimer = setTimeout(() => endScrub(true), 350); // a run of key presses seeks once
     });
     const paintVol = (v) => { vol.style.setProperty('--p', v + '%'); q('.vol-val').textContent = v; };
     const cancelVolumeDrag = () => {
@@ -162,12 +219,14 @@ W.media = {
 
     return {
       update(kind) {
+        if (scrub && scrub.key !== trackKey()) endScrub(false); // the song changed under the finger
         if (kind === 'fast') {
-          if (!media) return;
+          if (!media || scrub) return; // while the bar is held it shows the chosen time, not the song's
           if (media.durMs > 0) {
             const pos = Math.min(media.durMs, media.posMs + (media.playing ? performance.now() - media.at : 0));
             q('.fill').style.width = (pos / media.durMs) * 100 + '%';
             q('.m-pos').textContent = fmtTime(pos);
+            if (Math.floor(pos / 1000) !== ariaSec) { ariaSec = Math.floor(pos / 1000); paintAria(pos); } // once a second, not every 250 ms
           } else if (media.app === 'Internet Radio') {
             const pos = Math.max(0, (media.posMs || 0) + (media.playing ? performance.now() - media.at : 0));
             q('.fill').style.width = media.playing ? '100%' : '0';
@@ -185,6 +244,7 @@ W.media = {
         } else q('.vol-val').textContent = 'n/a';
         box.classList.toggle('idle', !m);
         if (!m) {
+          endScrub(false);
           box.classList.remove('playing');
           q('.m-app-name').textContent = 'Media';
           sourceIcon.replaceChildren();
@@ -192,6 +252,7 @@ W.media = {
           q('.m-artist').textContent = t('w.pressToResume');
           q('.fill').style.width = '0';
           q('.m-pos').textContent = q('.m-dur').textContent = '0:00';
+          ariaSec = -1; paintAria(0); bar.setAttribute('aria-disabled', 'true');
           if (artId !== 0) { artId = 0; img.classList.remove('on'); setArtColor(null); }
           return;
         }
@@ -207,13 +268,24 @@ W.media = {
         } else {
           q('.m-dur').textContent = fmtTime(m.durMs);
         }
+        // the slider's range and value for assistive technology (its maximum defaults to 100 without this)
+        if (m.durMs > 0) {
+          bar.setAttribute('aria-valuemax', Math.max(1, Math.round(m.durMs / 1000)));
+          bar.setAttribute('aria-disabled', String(!m.canSeek));
+          if (media && !scrub) { ariaSec = Math.floor(nowMs() / 1000); paintAria(nowMs()); }
+        } else {
+          // no known length (a live stream): no range to move on, and nothing left over from the song before
+          bar.setAttribute('aria-valuemax', '0');
+          bar.setAttribute('aria-disabled', 'true');
+          ariaSec = -1; paintAria(0);
+        }
         if (m.artId !== artId) {
           artId = m.artId;
           if (m.artId) img.src = `${API}/art?id=${m.artId}`;
           else { img.classList.remove('on'); setArtColor(null); }
         }
       },
-      destroy: cancelVolumeDrag,
+      destroy() { endScrub(false); cancelVolumeDrag(); },
     };
   },
 };
@@ -416,7 +488,7 @@ W.quotas = {
       const age = ov.updatedAt ? Math.max(0, Date.now() - ov.updatedAt) : null;
       const updStr = age != null ? `checked ${age < 60_000 ? 'just now' : fmtDur(age) + ' ago'}` : '';
       card.appendChild(h('div', 'q-head',
-        h('span', 'q-logo', '📊'),
+        h('span', 'q-logo', emo('📊')),
         h('span', 'q-name', 'Overview'),
         h('span', 'q-plan', `${days}-day spend`),
         updStr ? h('span', 'q-upd', updStr) : null
@@ -582,21 +654,96 @@ W.sessions = {
     const tokens = (n) => n == null ? '—' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n);
     const statusText = (s) => s.status === 'busy' ? t('sess.working') : s.status === 'waiting' ? t('sess.waiting') : s.status === 'shell' ? t('sess.shell') : s.outcome === 'completed' ? t('sess.completed') : s.outcome === 'aborted' ? t('sess.aborted') : t('sess.idle');
     const ageText = (since) => Date.now() - since < 60_000 ? 'just now' : shortDur(Date.now() - since) + ' ago';
+    // A Claude Code chat's title (the agent sends it only when Settings › Claude Code › "Show session titles on the phone"
+    // is on) is the main label and the folder goes under it; without a title the folder is the label, as before.
+    const titleOf = (s) => s.title || s.project || s.name;
+    const folderOf = (s) => (s.title ? s.project : '');
+    // A Claude Code chat's recent steps, last exchange and message list. The agent sends them only when Settings › Claude Code
+    // › "Show the conversation on the phone" is on. Returns the function that stops the refresh.
+    const conversationSection = (panel, s) => {
+      const box = h('div', 'session-conv');
+      panel.append(box);
+      let data = null, expanded = false, gone = false, asked = 0, applied = 0;
+      let labels = []; // the time label of each step on screen, so they can move on without drawing everything again
+      const stepAge = (st) => (st.running ? (st.at ? 'running ' + shortDur(Date.now() - st.at) : 'running') : st.at ? ageText(st.at) : '');
+      const refreshLabels = () => { for (const [el, st] of labels) el.textContent = stepAge(st); };
+      const toolName = (n) => n.startsWith('mcp__') ? n.slice(5).replace(/__/g, ' › ') : n;
+      const clip = (text, n) => text.length > n ? text.slice(0, n) + '…' : text;
+      const message = (m, full) => h('div', 'conv-msg ' + m.role,
+        h('span', 'conv-who', m.role === 'user' ? 'You' : 'Claude'),
+        h('div', full ? 'conv-text' : 'conv-text clamp', full ? m.text : clip(m.text, 500)));
+      const render = () => {
+        const prevList = box.querySelector('.conv-list');
+        const top = prevList ? prevList.scrollTop : null;
+        labels = [];
+        if (!data.enabled) {
+          box.replaceChildren(h('p', 'session-note', 'The conversation is off. Turn it on in Settings › Claude Code › Show the conversation on the phone.'));
+          return;
+        }
+        const messages = data.messages || [], steps = data.steps || [];
+        const kids = [];
+        if (steps.length) {
+          kids.push(h('div', 'conv-h', 'Recent steps'));
+          for (const st of [...steps].reverse().slice(0, 6)) {
+            const age = h('span', 'cs-a', stepAge(st));
+            labels.push([age, st]);
+            kids.push(h('div', 'conv-step' + (st.running ? ' on' : ''), h('span', 'cs-t', toolName(st.tool)), h('span', 'cs-d', st.detail || ''), age));
+          }
+        }
+        if (!messages.length) kids.push(h('p', 'session-note', 'No messages yet.'));
+        else if (expanded) {
+          kids.push(h('div', 'conv-h', 'Conversation'), h('div', 'conv-list', messages.map((m) => message(m, true))));
+        } else {
+          const lastOf = (role) => [...messages].reverse().find((m) => m.role === role);
+          kids.push(h('div', 'conv-h', 'Last exchange'));
+          for (const m of [lastOf('user'), lastOf('assistant')]) if (m) kids.push(message(m, false));
+        }
+        if (messages.length) {
+          const toggle = h('button', 'conv-toggle', expanded ? 'Hide the conversation' : `Show the conversation (${messages.length})`);
+          toggle.type = 'button';
+          toggle.addEventListener('click', () => { haptic(); expanded = !expanded; render(); });
+          kids.push(toggle);
+        }
+        box.replaceChildren(...kids);
+        const list = box.querySelector('.conv-list');
+        if (list) list.scrollTop = top ?? list.scrollHeight; // a new view starts at the newest message
+      };
+      const load = async () => {
+        const mine = ++asked;
+        try {
+          const d = await api('/work/conversation?id=' + encodeURIComponent(s.id), 'GET', 5000);
+          // A slower earlier request can finish after a newer one: its answer is older, and must not replace it (for
+          // example a "turned off" answer that has already been shown).
+          if (gone || mine < applied) return;
+          applied = mine;
+          // the messages are drawn again only when they changed, to keep the scroll position and the focus; the ages
+          // of the steps move on with the clock either way
+          if (JSON.stringify(d) !== JSON.stringify(data)) { data = d; render(); } else refreshLabels();
+        } catch (_) {
+          if (!gone && !data) box.replaceChildren(h('p', 'session-note', 'Could not read the conversation.'));
+        }
+      };
+      load();
+      const timer = setInterval(load, 3000);
+      return () => { gone = true; clearInterval(timer); };
+    };
     const openDetails = (s) => {
       haptic();
       const backdrop = h('div', 'session-backdrop');
       const panel = h('div', 'session-panel');
       panel.setAttribute('role', 'dialog');
       panel.setAttribute('aria-modal', 'true');
-      const title = h('h2', null, s.project || s.name);
-      const close = h('button', 'session-close', '✕');
+      const title = h('h2', null, titleOf(s));
+      const close = h('button', 'session-close', icon('x'));
       close.setAttribute('aria-label', 'Close session details');
+      let stopConversation = () => {};
       const onKey = (e) => { if (e.key === 'Escape') dismiss(); };
-      const dismiss = () => { backdrop.remove(); document.removeEventListener('keydown', onKey); };
+      const dismiss = () => { stopConversation(); backdrop.remove(); document.removeEventListener('keydown', onKey); };
       close.addEventListener('click', dismiss);
       backdrop.addEventListener('click', (e) => { if (e.target === backdrop) dismiss(); });
-      panel.append(h('div', 'session-panel-head', h('span', null, s.tool === 'codex' ? '◎ Codex' : '✳ Claude Code'), close), title);
+      panel.append(h('div', 'session-panel-head', h('span', null, s.tool === 'codex' ? '◎ Codex' : s.tool === 'cursor' ? '◆ Cursor' : '✳ Claude Code'), close), title);
       const rows = [
+        ['Folder', folderOf(s) || null],
         ['Status', statusText(s)],
         ['Started', s.startedAt ? ageText(s.startedAt) : null],
         ['Last activity', s.since ? ageText(s.since) : null],
@@ -609,8 +756,11 @@ W.sessions = {
         ['Last input / context window', s.lastInputTokens != null && s.contextWindow ? `${tokens(s.lastInputTokens)} / ${tokens(s.contextWindow)}` : null],
         ['Recent tool', s.lastTool],
       ];
-      for (const [label, value] of rows) if (value != null) panel.append(h('div', 'session-detail-row', h('span', null, label), h('strong', null, value)));
+      // a small label over each value, four to a row: the facts take one line instead of four
+      panel.append(h('div', 'session-grid', rows.filter(([, value]) => value != null)
+        .map(([label, value]) => h('div', 'session-cell', h('span', null, label), h('strong', null, value)))));
       if (s.tool === 'codex') panel.append(h('p', 'session-note', 'Token totals are for this local session, not your account allowance.'));
+      if (s.tool === 'claude') stopConversation = conversationSection(panel, s);
       backdrop.append(panel);
       document.body.append(backdrop);
       close.focus();
@@ -630,8 +780,8 @@ W.sessions = {
         const sorted = [...sessions].sort((a, b) => (S_ORDER[a.status] ?? 9) - (S_ORDER[b.status] ?? 9) || b.since - a.since);
         const rows = sorted.length ? sorted.map((s) => {
           const row = h('button', 'sess ' + s.status,
-            h('span', 'st'), h('span', 'tl ' + s.tool, s.tool === 'claude' ? '✳' : '◎'),
-            h('span', 'sess-main', h('span', 'nm', s.project || s.name), h('span', 'sess-meta', [s.model, s.effort].filter(Boolean).join(' · ') || statusText(s))),
+            h('span', 'st'), h('span', 'tl ' + s.tool, s.tool === 'claude' ? '✳' : s.tool === 'cursor' ? '◆' : '◎'),
+            h('span', 'sess-main', h('span', 'nm', titleOf(s)), h('span', 'sess-meta', [folderOf(s), [s.model, s.effort].filter(Boolean).join(' · ') || statusText(s)].filter(Boolean).join(' · '))),
             h('span', 'ds', shortDur(Date.now() - s.since)));
           row.type = 'button';
           row.addEventListener('click', () => openDetails(s));
@@ -658,7 +808,7 @@ W.github = {
         if (!g) return;
         const rows = Math.max(1, Math.floor((box.clientHeight - 90) / 25));
         user.textContent = g.user ? '@' + g.user : '';
-        bell.textContent = `🔔 ${g.notifications >= 50 ? '50+' : g.notifications}`;
+        bell.replaceChildren(rich(`🔔 ${g.notifications >= 50 ? '50+' : g.notifications}`));
         rc.textContent = g.reviewRequests.length;
         mc.textContent = g.myPrs.length;
         const nRev = Math.min(g.reviewRequests.length || 1, Math.max(1, Math.floor(rows / 2)));
@@ -720,7 +870,7 @@ W.processes = {
         e._g = g;
         e.querySelector('.p-t').textContent = g.title;
         e.querySelector('.p-count').textContent = g.count > 1 ? '×' + g.count : '';
-        e.querySelector('.p-lock').textContent = g.locked ? '🔒' : '';
+        e.querySelector('.p-lock').replaceChildren(...(g.locked ? [emo('🔒')] : []));
         e.querySelector('.p-bar i').style.width = ((sort === 'cpu' ? g.cpu : g.memMb) / max) * 100 + '%';
         e.querySelector('.p-nums b').textContent = sort === 'cpu' ? g.cpu.toFixed(1) + '%' : fmtMem(g.memMb);
         e.querySelector('.p-nums small').textContent = sort === 'cpu' ? fmtMem(g.memMb) : g.cpu.toFixed(1) + '%';
@@ -766,14 +916,7 @@ W.shortcuts = {
   },
 };
 
-W.button = {
-  bare: true, needs: ['state'],
-  create(box, { o }) {
-    const s = (cfg.shortcuts || []).find((x) => x.id === o.id) || (cfg.shortcuts || [])[0];
-    box.append(s ? keyButton(s, { cover: o.cover === true, label: o.showLabel !== false }) : h('div', 'empty', t('w.pickShortcut')));
-    return { update: () => applyToggles(box) };
-  },
-};
+// The Big button lives in pc.js, next to the Home Assistant widget it shares its rules with.
 
 W.worldclock = {
   needs: ['tick'],
@@ -910,7 +1053,7 @@ W.pomodoro = {
     const save = () => { st.phase = plan[st.step].kind; store.set(key, st); };
     save();
     const dial = h('div', 'g-dial'), time = h('div', 'g-val'), phase = h('div', 'g-label'), count = h('div', 'g-sub');
-    const play = h('button', 'pb main', '▶'), reset = h('button', 'pb', '↺'), skip = h('button', 'pb', '⏭');
+    const play = labelled(h('button', 'pb main', icon('play')), t('w.a.start')), reset = labelled(h('button', 'pb', icon('rotate-ccw')), t('w.a.restart')), skip = labelled(h('button', 'pb', icon('skip-forward')), t('w.a.skip'));
     dial.append(time);
     box.append(dial, phase, count, h('div', 'pomo-btns', reset, play, skip));
     let svg = null;
@@ -959,9 +1102,12 @@ W.pomodoro = {
       time.textContent = fmtTime(left + 999);
       phase.textContent = label();
       const tomatoes = st.count ? '🍅'.repeat(Math.min(st.count, 6)) + (st.count > 6 ? ` ×${st.count}` : '') : t('w.noSessionsToday');
-      count.textContent = custom.bad ? `Sequence not understood: "${custom.bad}"`
-        : rounds > 1 ? `Round ${(st.round || 0) + 1}/${rounds} · ${tomatoes}` : tomatoes;
-      play.textContent = st.endsAt ? '⏸' : '▶';
+      count.replaceChildren(rich(custom.bad ? `Sequence not understood: "${custom.bad}"`
+        : rounds > 1 ? `Round ${(st.round || 0) + 1}/${rounds} · ${tomatoes}` : tomatoes));
+      // the tomato icons are decorative (aria-hidden), so say the count in words for screen readers
+      if (st.count && !custom.bad) count.append(h('span', 'sr-only', ' ' + t('w.a.sessionsToday', { n: st.count })));
+      play.replaceChildren(icon(st.endsAt ? 'pause' : 'play'));
+      labelled(play, t(st.endsAt ? 'w.a.pause' : 'w.a.start'));
     };
     play.addEventListener('click', () => {
       haptic();
@@ -1116,7 +1262,7 @@ W.command = {
   needs: ['tick'],
   create(box, { o, page, w }) {
     const out = h('div', 'cmd-o', '…'), foot = h('div', 'cmd-f', '');
-    box.append(h('div', 'w-title', o.title || 'Command'), out, foot);
+    box.append(h('div', 'w-title', o.title || en('Command')), out, foot);
     let last = 0, busy = false, res = null;
     const load = async (force) => {
       if (busy) return;
@@ -1166,7 +1312,7 @@ W.push = {
       if (c) box.style.setProperty('--c', c); else box.style.removeProperty('--c');
       const unit = v.unit ?? o.unit ?? '';
       const style = o.style && o.style !== 'auto' ? o.style : v.items ? 'list' : 'big';
-      const title = h('div', 'w-title', (v.icon ? v.icon + ' ' : '') + (o.title || v.title || key), h('span', 'push-age w-sub', ago(item.at)));
+      const title = h('div', 'w-title', v.icon ? rich(v.icon + ' ') : '', o.title || v.title || key, h('span', 'push-age w-sub', ago(item.at)));
       let body;
       if (style === 'list') {
         const items = v.items || (v.value != null ? [v.value] : []);
@@ -1208,7 +1354,7 @@ W.inbox = {
     const list = h('div', 'inbox');
     const clear = h('button', 'mini-btn', 'Clear');
     clear.addEventListener('click', () => { haptic(); D.notes = []; store.set('notes', []); emit('notes'); });
-    box.append(h('div', 'w-title', 'Notifications', clear), list);
+    box.append(h('div', 'w-title', en('Notifications'), clear), list);
     let shown = '';
     return {
       update(kind) {

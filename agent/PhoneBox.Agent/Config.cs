@@ -19,6 +19,8 @@ public sealed class AgentConfig
     public LanConfig Lan { get; set; } = new();
     public UpdateConfig Updates { get; set; } = new();
     public ClaudeConfig Claude { get; set; } = new();
+    /// <summary>Cursor agent-transcript sessions on the AI sessions widget (off by default).</summary>
+    public CursorConfig Cursor { get; set; } = new();
     public List<PageConfig> Pages { get; set; } = [];
     public List<Shortcut> Shortcuts { get; set; } = [];
     public List<RuleConfig> Rules { get; set; } = [];
@@ -101,6 +103,18 @@ public sealed class WeatherConfig
     public string City { get; set; } = "Tallinn";
     public double Lat { get; set; } = 59.437;
     public double Lon { get; set; } = 24.745;
+    /// <summary>
+    /// "celsius" or "fahrenheit": how the panel shows temperatures. The forecast is always fetched in °C and converted
+    /// on the phone, so a change applies to the cached forecast too and Custom HTML widgets keep Open-Meteo's values.
+    /// </summary>
+    [JsonConverter(typeof(WeatherUnitJsonConverter))]
+    public string Unit { get; set; } = "celsius";
+    /// <summary>
+    /// The Open-Meteo forecast model the phone asks for ("gfs_seamless", "ecmwf_ifs025"…), or "" for Open-Meteo's own
+    /// best match. Only the models in <see cref="WeatherModelJsonConverter.Models"/> reach the phone.
+    /// </summary>
+    [JsonConverter(typeof(WeatherModelJsonConverter))]
+    public string Model { get; set; } = "";
 }
 
 public sealed class PingConfig
@@ -126,10 +140,10 @@ public sealed class NightConfig
 public sealed class DisplayConfig
 {
     public AppearanceConfig? Appearance { get; set; }
-    /// <summary>UI language code ("auto", "en", "tr", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "vi", "zh").</summary>
+    /// <summary>UI language code ("auto", "en", "tr", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "el", "vi", "zh").</summary>
     public string Language { get; set; } = "auto";
     /// <summary>The codes the panel and the settings page are translated into (i18n.js).</summary>
-    internal static readonly string[] Languages = ["auto", "en", "tr", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "vi", "zh"];
+    internal static readonly string[] Languages = ["auto", "en", "tr", "de", "fr", "es", "it", "pt", "nl", "pl", "ru", "el", "vi", "zh"];
     public bool ShowSeconds { get; set; } = true;
     /// <summary>false ("14:05", default), true ("2:05 PM") or "auto" (follow the phone).</summary>
     [JsonConverter(typeof(Hour12JsonConverter))]
@@ -138,6 +152,8 @@ public sealed class DisplayConfig
     public int IdleReturnSec { get; set; } = 90;
     /// <summary>Vibrate when a session finishes or needs input.</summary>
     public bool Vibrate { get; set; } = true;
+    /// <summary>Show a message when a session finishes. The "needs input" message always shows.</summary>
+    public bool FinishToast { get; set; } = true;
     /// <summary>The phone's volume keys switch pages.</summary>
     public bool VolumeKeys { get; set; } = true;
     /// <summary>landscape, portrait or auto (follow the phone). In portrait the widgets are arranged automatically.</summary>
@@ -196,7 +212,7 @@ public sealed class UpdateConfig
 {
     /// <summary>Install new GitHub releases automatically (phone app over USB, agent in place).</summary>
     public bool Auto { get; set; } = true;
-    public string Repo { get; set; } = "ersinkoc/phonebox";
+    public string Repo { get; set; } = "dhiya13/phonebox"; // this fork's releases (upstream: ersinkoc/phonebox)
 }
 
 public sealed class ClaudeConfig
@@ -205,8 +221,20 @@ public sealed class ClaudeConfig
     public bool PhoneApprovals { get; set; } = true;
     /// <summary>How long the phone may take before Claude Code asks in the terminal instead.</summary>
     public int TimeoutSec { get; set; } = 90;
+    /// <summary>Let the phone open a Claude Code session's recent messages and steps, read from its chat file on this
+    /// computer. They are your prompts and Claude's replies, so this stays off until you turn it on.</summary>
+    public bool ShareConversation { get; set; }
     /// <summary>Only use the phone when the PC has been idle for a minute (you are away from the keyboard).</summary>
     public bool OnlyWhenAway { get; set; }
+    /// <summary>Show each Claude Code chat's title on the phone. The title is the name you gave the chat or the one
+    /// Claude Code wrote, which it often draws from your first prompt, so it stays off until you turn it on.</summary>
+    public bool ShareSessionTitles { get; set; }
+}
+
+public sealed class CursorConfig
+{
+    /// <summary>Show recent Cursor agent chats on the AI sessions widget (off by default).</summary>
+    public bool Sessions { get; set; }
 }
 
 public sealed class PageConfig
@@ -287,7 +315,10 @@ public sealed class RuleConfig
     public string? During { get; set; }
     /// <summary>Seconds the phone counts down before switching pages; null = the phone's setting, 0 = at once.</summary>
     public int? CountdownSec { get; set; }
-    /// <summary>Push trigger: compare the value instead of "is on" (&gt;, &lt;, =, !=) with <see cref="Arg"/>.</summary>
+    /// <summary>
+    /// Push trigger: compare the value instead of "is on" (&gt;, &gt;=, &lt;, &lt;=, =, !=) with <see cref="Arg"/>, or
+    /// "stale": the value has not been updated for <see cref="Arg"/> seconds (or is not there at all).
+    /// </summary>
     public string? Op { get; set; }
     public string? Arg { get; set; }
 
@@ -327,6 +358,16 @@ public sealed class HomeAssistantConfig
 {
     public string? Url { get; set; }
     public string? Token { get; set; }
+    /// <summary>
+    /// Paired phones may talk to Home Assistant themselves while this computer is off or out of reach. Off by default:
+    /// it hands a token to the phone. Only the entities the Home Assistant widgets list, with their switch permission,
+    /// go with it.
+    /// </summary>
+    public bool PhoneDirect { get; set; }
+    /// <summary>The address the phone uses (this computer may reach Home Assistant at an address the phone cannot); empty = <see cref="Url"/>.</summary>
+    public string? PhoneUrl { get; set; }
+    /// <summary>A token just for the phones, so it can be revoked on its own; empty = <see cref="Token"/>.</summary>
+    public string? PhoneToken { get; set; }
 }
 
 public sealed class PhoneConfig
@@ -497,6 +538,8 @@ public sealed partial class ConfigStore(string path)
     private static AgentConfig Normalize(AgentConfig c, IReadOnlySet<string>? staleIds = null)
     {
         c.Weather ??= new();
+        c.Weather.Unit = WeatherUnitJsonConverter.Normalize(c.Weather.Unit);
+        c.Weather.Model = WeatherModelJsonConverter.Normalize(c.Weather.Model);
         c.CodexBar ??= new();
         c.CodexBar.Providers = (c.CodexBar.Providers ?? []).Where(p => p is "claude" or "codex" or "antigravity").Distinct().ToArray();
         c.CodexBar.PageSize = Math.Clamp(c.CodexBar.PageSize, 0, 6);
@@ -528,7 +571,8 @@ public sealed partial class ConfigStore(string path)
         if (c.Ping.Host.Length > 253 || c.Ping.Host.Any(ch => ch <= ' ' || ch > '~')) c.Ping.Host = PingMonitor.DefaultHost;
         c.Claude ??= new();
         c.Claude.TimeoutSec = Math.Clamp(c.Claude.TimeoutSec, 10, 3600);
-        if (string.IsNullOrWhiteSpace(c.Updates.Repo)) c.Updates.Repo = "ersinkoc/phonebox";
+        c.Cursor ??= new();
+        if (string.IsNullOrWhiteSpace(c.Updates.Repo)) c.Updates.Repo = "dhiya13/phonebox";
         c.Lan.Port = Math.Clamp(c.Lan.Port, 1024, 65535);
         if (string.IsNullOrWhiteSpace(c.Lan.Token)) c.Lan.Token = NewToken();
         if (string.IsNullOrWhiteSpace(c.Lan.WebhookToken)) c.Lan.WebhookToken = NewToken();
@@ -596,6 +640,8 @@ public sealed partial class ConfigStore(string path)
         c.HomeAssistant ??= new();
         c.HomeAssistant.Url = string.IsNullOrWhiteSpace(c.HomeAssistant.Url) ? null : c.HomeAssistant.Url.Trim().TrimEnd('/');
         c.HomeAssistant.Token = string.IsNullOrWhiteSpace(c.HomeAssistant.Token) ? null : c.HomeAssistant.Token.Trim();
+        c.HomeAssistant.PhoneUrl = string.IsNullOrWhiteSpace(c.HomeAssistant.PhoneUrl) ? null : c.HomeAssistant.PhoneUrl.Trim().TrimEnd('/');
+        c.HomeAssistant.PhoneToken = string.IsNullOrWhiteSpace(c.HomeAssistant.PhoneToken) ? null : c.HomeAssistant.PhoneToken.Trim();
         c.Console ??= new();
         c.Console.Profiles = (c.Console.Profiles ?? []).Where(p => p is not null).Take(200).ToList(); // more than 30 is refused on save
         var consoleIds = new HashSet<string>();
@@ -662,7 +708,11 @@ public sealed partial class ConfigStore(string path)
             if (r.CountdownSec is { } cd) r.CountdownSec = Math.Clamp(cd, 0, 30);
             r.Days = RuleEngine.NormalizeDays(r.Days);
             r.During = string.IsNullOrWhiteSpace(r.During) ? null : r.During.Trim();
-            r.Op = r.Op is ">" or "<" or "=" or "!=" ? r.Op : null;
+            r.Op = r.Op is ">" or ">=" or "<" or "<=" or "=" or "!=" or "stale" ? r.Op : null;
+            // seconds without an update: 1 s to a day, a minute when the box was left empty or holds text ("Infinity" too)
+            if (r.Op == "stale")
+                r.Arg = (double.TryParse(r.Arg, NumberStyles.Float, CultureInfo.InvariantCulture, out var staleSec) && double.IsFinite(staleSec) && staleSec > 0
+                    ? Math.Clamp(Math.Round(staleSec), 1, 86400) : 60).ToString(CultureInfo.InvariantCulture);
             r.Shortcut = string.IsNullOrWhiteSpace(r.Shortcut) ? null : r.Shortcut.Trim();
             if (r.Page is { } page) r.Page = PageId(page);
         }
@@ -841,6 +891,46 @@ public sealed class CodexBarConfig
     public bool Rotate { get; set; } = true;
     public int PageSize { get; set; } = 2;
     public int RotateInterval { get; set; } = 8;
+}
+
+/// <summary>
+/// weather.unit: "fahrenheit" in any case or padding, anything else "celsius". A hand-edited number or boolean must not
+/// make the whole settings file unreadable, so a non-string token is skipped instead of thrown on.
+/// </summary>
+internal sealed class WeatherUnitJsonConverter : JsonConverter<string>
+{
+    public static string Normalize(string? value) => string.Equals(value?.Trim(), "fahrenheit", StringComparison.OrdinalIgnoreCase) ? "fahrenheit" : "celsius";
+
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return Normalize(reader.GetString());
+        reader.Skip();
+        return "celsius";
+    }
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) => writer.WriteStringValue(Normalize(value));
+}
+
+/// <summary>
+/// weather.model: one of the Open-Meteo models the settings offer, anything else "" (Open-Meteo's best match). The value
+/// goes into the phone's forecast URL, so only known names pass; like the unit, a non-string token is skipped.
+/// </summary>
+internal sealed class WeatherModelJsonConverter : JsonConverter<string>
+{
+    public static readonly string[] Models =
+        ["gfs_seamless", "ecmwf_ifs025", "icon_seamless", "ukmo_seamless", "gem_seamless", "jma_seamless", "meteofrance_seamless", "cma_grapes_global"];
+
+    public static string Normalize(string? value) =>
+        Models.FirstOrDefault(m => string.Equals(m, value?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? "";
+
+    public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.String) return Normalize(reader.GetString());
+        reader.Skip();
+        return "";
+    }
+
+    public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) => writer.WriteStringValue(Normalize(value));
 }
 
 /// <summary>Reads/writes display.hour12 as boolean false/true or "auto" (follow the phone) so boolean configs stay wire-compatible.</summary>

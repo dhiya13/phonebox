@@ -20,10 +20,14 @@ flowchart LR
   Proxy -->|"USB: adb reverse → 127.0.0.1:8765"| Agent
   Proxy -.->|"Wi-Fi / Tailscale: HTTPS :8766,<br/>pinned certificate + key"| Agent
   Hooks["Scripts, CI,<br/>Home Assistant"] -->|webhooks| Agent
+  Proxy -.->|"PC off: Home Assistant REST<br/>(HaDirect, opt-in)"| Hooks
 ```
 
 - The WebView never talks to the PC directly: requests to `/agent/*` are intercepted by the app and forwarded over
   the adb tunnel (or the pinned HTTPS connection), so there are no CORS, mixed-content or local-network issues.
+- With **Phones reach Home Assistant themselves when this PC is off** on, the agent hands paired phones an address,
+  a token and the widgets' entities (`/api/ha/direct`); `HaDirect` answers `/api/ha/states` and `/api/ha/toggle`
+  from Home Assistant itself only while no route reaches the agent, so a switch is never sent twice.
 - Live events (page switches, notifications, permission prompts) arrive over one server-sent-events stream
   (`/api/stream`); plain polling remains as the fallback.
 - The agent samples only what is on screen: process lists and command widgets run only while a phone looks at them.

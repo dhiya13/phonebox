@@ -59,6 +59,7 @@ builder.Services.AddSingleton(endpoint);
 builder.Services.AddSingleton<AudioControl>();
 builder.Services.AddSingleton<AppCatalog>();
 builder.Services.AddSingleton(_ => new ShortcutIconUploads(Path.Combine(configDir, "icons")));
+builder.Services.AddSingleton(_ => new ButtonPictures(Path.Combine(configDir, "icons", "buttons")));
 builder.Services.AddSingleton<PairingCodes>();
 builder.Services.AddSingleton<SpotifyControl>();
 builder.Services.AddSingleton<ControlDeck>();
@@ -165,10 +166,32 @@ app.Use((ctx, next) =>
     return next(ctx);
 });
 
+// How long each kind of request takes (GET /api/latency, local only), and a log line for the slow ones: tells a slow
+// control action (osascript on a busy computer...) from a slow phone or network. The live stream is long by design.
+var timings = new RequestTimings();
+app.Use(async (ctx, next) =>
+{
+    if (!ctx.Request.Path.StartsWithSegments("/api") || ctx.Request.Path.StartsWithSegments("/api/stream")) { await next(ctx); return; }
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+    try { await next(ctx); }
+    finally
+    {
+        var ms = (long)System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        // only a request that matched an endpoint (routing has run by now), so unknown paths cannot add rows
+        if (RequestTimings.RouteOf(ctx.GetEndpoint(), ctx.Request.Method) is { } route)
+        {
+            timings.Add(route, ms);
+            if (ms >= RequestTimings.SlowMs && ctx.Request.Method != "GET") app.Logger.LogInformation("slow request: {Route} took {Ms} ms", route, ms);
+        }
+    }
+});
+app.MapGet("/api/latency", () => Results.Json(timings.Summary()));
+
 // Security:
 //  - Local port 8765 listens on 127.0.0.1 only; the Host check blocks DNS rebinding. The phone's USB proxy sends
 //    no Origin header; from browsers only the settings page itself (same origin) is accepted (no CSRF).
 //  - The optional Wi-Fi port only serves the phone API, only over TLS, and only with the paired token.
+app.UseWebSockets();
 app.UseRouting();
 app.Use(async (ctx, next) =>
 {
@@ -223,6 +246,8 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
+app.Map("/api/trackpad", TrackpadHandler.HandleEndpoint);
+
 // ---------------------------------------------------------------- Wi-Fi pairing (local / USB only)
 // The phone calls this through the USB tunnel and stores everything it needs to connect over Wi-Fi.
 app.MapGet("/api/pair", (ConfigStore cfg) =>
@@ -249,7 +274,7 @@ app.MapPost("/api/pair/start", (ConfigStore cfg, PairingCodes codes) =>
     var hosts = Lan.Addresses();
     var fingerprint = Lan.Fingerprint(lanCert);
     var link = PairingCodes.Link(Environment.MachineName, fingerprint, lanCfg.Port, hosts, code);
-    var apk = $"https://github.com/ersinkoc/phonebox/releases/download/v{AppPaths.Version}/PhoneBox-{AppPaths.Version}.apk";
+    var apk = $"https://github.com/{cfg.Get().Updates.Repo}/releases/download/v{AppPaths.Version}/PhoneBox-{AppPaths.Version}.apk";
     return Results.Json(new
     {
         enabled = true,
@@ -328,7 +353,7 @@ app.MapGet("/api/settings", (ConfigStore cfg, HttpResponse res) =>
     return Results.Text(json, "application/json; charset=utf-8");
 });
 
-app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck deck, PhotoFrame photos, CameraFeeds cameras, ShortcutIconUploads icons, ILogger<Program> log) =>
+app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck deck, PhotoFrame photos, CameraFeeds cameras, ShortcutIconUploads icons, ButtonPictures pictures, ILogger<Program> log) =>
 {
     if (req.ContentType?.StartsWith("application/json") != true) return Results.StatusCode(415);
     using var r = new StreamReader(req.Body);
@@ -348,6 +373,7 @@ app.MapPut("/api/settings", async (HttpRequest req, ConfigStore cfg, ControlDeck
     cameras.SettingsSaved();
     deck.ReconcileRadios(waitForGate: true);
     icons.Cleanup(() => cfg.Get().Shortcuts.Select(s => s.Id)); // drop uploads for shortcuts that got deleted
+    pictures.Cleanup(ButtonPictures.Used(cfg.Get())); // and Big button pictures no button uses any more
     ShortcutIcons.ClearHasIconCache();
     log.LogInformation("settings saved");
     return Results.Ok(new { version = savedVersion.ToString(CultureInfo.InvariantCulture) });
@@ -514,6 +540,9 @@ app.MapGet("/api/ha/states", async (string? ids, HomeAssistant ha) =>
     Results.Json(await ha.StatesAsync((ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))));
 app.MapPost("/api/ha/toggle/{id}", async (string id, HomeAssistant ha) =>
     await ha.ToggleAsync(id) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
+// Home Assistant without this computer: what a paired phone needs to reach Home Assistant itself while the computer is off
+// (only when Settings › General › Home Assistant allows it). The phone stores it and uses it only when the agent is out of reach.
+app.MapGet("/api/ha/direct", (ConfigStore cfg) => Results.Json(HomeAssistant.DirectFor(cfg.Get())));
 // Settings › General › Ping & network: the connected adapters to pick from (local only, not on the Wi-Fi list)
 app.MapGet("/api/network/adapters", (ConfigStore cfg) => Results.Json(SystemMonitor.Adapters(cfg.Get().Ping.Adapters)));
 
@@ -602,6 +631,9 @@ app.MapGet("/api/state", (long? ev, HttpContext ctx) => Results.Json(State(ctx.R
 
 // Live stream (server-sent events) for the phone: "state" every second, "event" as soon as one happens, "work" when it
 // changes. The Android shell keeps one connection open instead of polling; the panel falls back to polling without it.
+// One "state" frame for all open streams: they wake on the same second (below), so the state is built and serialized once
+// per tick, not once per phone. Everything State() reads is a singleton, so the root provider will do.
+var stateFrames = new StateFrameCache(() => State(app.Services, null), new JsonSerializerOptions(JsonSerializerDefaults.Web));
 app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor sessions, GitHubMonitor gh, SpectrumAnalyzer spectrum, ILogger<Program> log) =>
 {
     var ct = ctx.RequestAborted;
@@ -617,30 +649,43 @@ app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor
         await ctx.Response.Body.FlushAsync(ct);
     }
     using var wake = new SemaphoreSlim(0);
+    var poked = 0;
     void OnEmit() { try { wake.Release(); } catch (ObjectDisposedException) { } }
+    // something the phone shows just changed (see StateSignal): send a state now, not at the next whole second
+    void OnPoke() { Volatile.Write(ref poked, 1); OnEmit(); }
     push.Emitted += OnEmit;
+    StateSignal.Changed += OnPoke;
     try
     {
         var seq = push.Seq;
         var lastWork = "";
         var next = 0L;
         var lastSpec = 0L;
+        var lastState = 0L;
         var tick = 0;
         while (!ct.IsCancellationRequested)
         {
             foreach (var e in push.Since(seq)) { await Send("event", e); seq = e.Seq; }
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            if (now >= next)
+            var tickDue = now >= next;
+            var pokeDue = Volatile.Read(ref poked) == 1 && now - lastState >= 100;
+            if (tickDue || pokeDue)
             {
+                Volatile.Write(ref poked, 0); // before the frame is built: a change during the build is answered by the next pass
                 if (isPhone) Interlocked.Exchange(ref ApprovalStore.PhoneLastSeen, now);
-                await Send("state", State(ctx.RequestServices, null));
+                await ctx.Response.WriteAsync(stateFrames.Get(push.Seq, StateSignal.Version), ct);
+                await ctx.Response.Body.FlushAsync(ct);
+                lastState = now;
+            }
+            if (tickDue)
+            {
                 if (tick++ % 2 == 0)
                 {
-                    var work = new { sessions = sessions.Snapshot(), github = gh.Snapshot() };
+                    var work = WorkFeed.Build(sessions, gh);
                     var json = JsonSerializer.Serialize(work, opts);
                     if (json != lastWork) { lastWork = json; await Send("work", work); }
                 }
-                next = now + 1000;
+                next = (now / 1000 + 1) * 1000; // the next whole second, the same for every stream (see stateFrames)
             }
             // spectrum frames for a visualizer on screen (SpectrumAnalyzer runs only while a panel asks for it). While
             // capture runs, every open stream gets them, also a second phone without a visualizer: the stream is opened
@@ -653,6 +698,8 @@ app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor
                 if (spectrum.Frame() is { } bands) await Send("spectrum", new { b = bands });
             }
             var waitMs = next - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            // a change that arrived within 100 ms of the last state waits out the rest of that gap
+            if (Volatile.Read(ref poked) == 1) waitMs = Math.Min(waitMs, lastState + 100 - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             if (specActive) waitMs = Math.Min(waitMs, lastSpec + 1000 / SpectrumAnalyzer.Fps - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             await wake.WaitAsync(TimeSpan.FromMilliseconds(Math.Max(5, waitMs)), ct);
         }
@@ -662,6 +709,7 @@ app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor
     finally
     {
         push.Emitted -= OnEmit;
+        StateSignal.Changed -= OnPoke;
         log.LogInformation("live stream closed ({Via})", via);
     }
 });
@@ -678,6 +726,13 @@ app.MapPost(ClaudeHook.Endpoint, async (HttpRequest req, ConfigStore cfg, Approv
 app.MapGet("/api/claude/hook", () => Results.Json(new { installed = ClaudeHook.Installed(), path = ClaudeHook.SettingsPath }));
 app.MapPost("/api/claude/hook", (ConfigStore cfg) => ClaudeHook.Configure(true, Port, cfg.Get().Claude.TimeoutSec) is { } err ? Results.BadRequest(new { error = err }) : Results.Ok());
 app.MapDelete("/api/claude/hook", (ConfigStore cfg) => ClaudeHook.Configure(false, Port, cfg.Get().Claude.TimeoutSec) is { } err ? Results.BadRequest(new { error = err }) : Results.Ok());
+
+// The recent messages and steps of one running Claude Code session, for the phone's session details. Off until the user
+// turns on Settings › Claude Code › "Show the conversation on the phone"; only a session the monitor currently sees.
+app.MapGet("/api/work/conversation", (string id, ConfigStore cfg, SessionMonitor sessions) =>
+{
+    return Results.Json(ClaudeTranscript.ForPhone(cfg.Get().Claude.ShareConversation, sessions.Snapshot(), id));
+});
 
 // Permission prompts waiting for the phone (posted by the Claude Code hook, see ClaudeHook.cs).
 app.MapGet("/api/approvals", (ApprovalStore a) => Results.Json(new { items = a.Snapshot() }));
@@ -734,6 +789,7 @@ app.MapPost("/api/media/{action}", async (string action, long? ms, MediaMonitor 
         if (ok && starting) deck.StopAllRadios();
         return (Ok: ok, Media: deck.EffectiveMedia(media.Snapshot()));
     }, ct);
+    StateSignal.Poke();
     return outcome.Ok ? Results.Json(new { ok = true, media = outcome.Media }) : Results.BadRequest();
 });
 
@@ -747,16 +803,13 @@ app.MapPost("/api/volume", (int? level, string? op, AudioControl audio) =>
         _ when level is { } l => audio.SetVolume(l),
         _ => false,
     };
+    if (ok) StateSignal.Poke(); // the phone's other screens and widgets see it now, not at the next second
     return ok ? Results.Json(audio.Current()) : Results.BadRequest();
 });
 
 app.MapGet("/api/quotas", (QuotaMonitor q) => Results.Json(new { providers = q.Snapshot(), overview = q.Overview() }));
 
-app.MapGet("/api/work", (SessionMonitor s, GitHubMonitor gh) => Results.Json(new
-{
-    sessions = s.Snapshot(),
-    github = gh.Snapshot(),
-}));
+app.MapGet("/api/work", (SessionMonitor s, GitHubMonitor gh) => Results.Json(WorkFeed.Build(s, gh)));
 
 app.MapGet("/api/proxy", (string? url, CancellationToken ct) => WidgetFeedProxy.FetchAsync(url, ct));
 
@@ -817,6 +870,25 @@ app.MapGet("/api/shortcuts/icon", (string id, bool? upload, ConfigStore cfg, Sho
 // phone only ever needs to read an icon (GET /api/shortcuts/icon, above), never write one.
 app.MapPost("/api/settings/shortcut-icon", (string id, HttpRequest req, ConfigStore cfg, ShortcutIconUploads icons) =>
     UploadShortcutIconAsync(id, req.Headers["X-Config-Version"], req.Body, req.ContentType, cfg, icons));
+
+// A Big button's own picture (see ButtonPictures), for the phone: only one a button uses. The id is the picture's
+// content hash, so it never changes under the same address and may be cached.
+app.MapGet("/api/button-picture", (string? id, ConfigStore cfg, ButtonPictures pictures, HttpResponse res) =>
+{
+    if (id is null || !ButtonPictures.Used(cfg.Get()).Contains(id) || pictures.Read(id) is not { } found) return Results.NotFound();
+    res.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+    res.Headers["X-Content-Type-Options"] = "nosniff";
+    res.Headers.CacheControl = "private, max-age=31536000, immutable";
+    return Results.File(found.Bytes, found.ContentType);
+});
+
+// Layout › Big button › Picture: stores an upload (PNG, WEBP or SVG, 512 KB max) and answers its id, which the layout
+// then saves in the button's "picture" option. Local only, like the rest of the settings API.
+app.MapPost("/api/settings/button-picture", async (HttpRequest req, ButtonPictures pictures) =>
+{
+    var (id, error) = pictures.Save(req.ContentType, await ShortcutIconUploads.ReadBounded(req.Body));
+    return error is null ? Results.Ok(new { id }) : Results.BadRequest(new { error });
+});
 
 // Removes a shortcut's uploaded icon; it falls back to its auto-detected program icon, or the emoji.
 app.MapDelete("/api/settings/shortcut-icon", (string id, HttpRequest req, ConfigStore cfg, ShortcutIconUploads icons) =>

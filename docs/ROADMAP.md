@@ -16,18 +16,21 @@ people who proposed or prototyped something are credited in the [changelog](../C
 
 ## Contributions in progress
 
-- **Clock widget: choose the AI providers in the status line**
-  ([#225](https://github.com/ersinkoc/phonebox/issues/225), pull request
-  [#228](https://github.com/ersinkoc/phonebox/pull/228)).
 - **Discord widget: show who is speaking** ([#226](https://github.com/ersinkoc/phonebox/issues/226)).
-- **Linux default shortcuts on KDE and other desktops**: start the desktop's own calculator, settings and system
-  monitor when the GNOME ones are missing ([#238](https://github.com/ersinkoc/phonebox/issues/238)).
 - **Feeding PhoneBox from MQTT**: a bridge script and a guide example for pushed values and notifications
   ([#241](https://github.com/ersinkoc/phonebox/issues/241)).
 - **Rules for pushed values**: a "not updated for N seconds" condition, `>=` / `<=`, and a separate release threshold
-  ([#242](https://github.com/ersinkoc/phonebox/issues/242)).
-- **Panel: built-in English widget titles keep English capitals in a Turkish panel**
-  (pull request [#240](https://github.com/ersinkoc/phonebox/pull/240)).
+  ([#242](https://github.com/ersinkoc/phonebox/issues/242), pull request
+  [#245](https://github.com/ersinkoc/phonebox/pull/245), in 0.9.21, did the first two).
+- **Codex permission prompts on the phone**: answer Codex's own approval requests with Allow / Deny, like Claude Code's
+  ([#253](https://github.com/ersinkoc/phonebox/issues/253), pull request
+  [#254](https://github.com/ersinkoc/phonebox/pull/254)).
+- **Voice commands**: say what you want and a language model of your choice (local through Ollama, or a hosted one)
+  picks from the shortcuts you allowed; opt-in, off by default ([#257](https://github.com/ersinkoc/phonebox/issues/257)).
+- **Pomodoro: an optional sound when a step ends**, off by default and silent in night mode
+  ([#267](https://github.com/ersinkoc/phonebox/issues/267)).
+- **Steam friends and activity widgets** (pull request [#244](https://github.com/ersinkoc/phonebox/pull/244)): waiting
+  for an issue to agree on the scope, and a rebase.
 
 ## Waiting on someone else
 

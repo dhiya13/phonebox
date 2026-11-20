@@ -1,8 +1,121 @@
 # Changelog
 
-## Unreleased
+## 0.9.22.1 — 2026-11-20
 
-Big buttons that show a picture, and an audit of the agent, the panel, the phone app and the installers: each fix came
+First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream
+version they are based on, and the agent now looks for updates in this fork's releases.
+
+**Panel**
+- Big button: its own picture, label, emoji and colour, set in the button's settings, so a button no longer needs a
+  shortcut to carry a picture. **When tapped** can now switch a **Home Assistant** entity directly: scripts and scenes
+  run, switches and lights toggle and show whether they are on, and a refused call says why. No `curl` shortcut with
+  the token in its command line is needed, and with the PC off the phone switches it itself. Buttons set to a shortcut
+  look and work as before.
+
+**Phone app**
+- Big button pictures are kept on the phone, so the buttons keep them while the PC is off.
+- Home Assistant without the PC: with the new **Settings › General › Home Assistant › Phones reach Home Assistant
+  themselves when this PC is off** (off by default), the Home Assistant widgets keep showing and switching your
+  entities while the PC is off. The phone talks to Home Assistant directly only when the agent does not answer, and
+  follows the same rules: only the widgets' entities, and switching only where the widget allows it. Optional separate
+  address and token for phones.
+
+## 0.9.22 — 2026-11-19
+
+Greek, a Trackpad widget, Claude Code session details and chat titles, CPU and GPU temperature on Apple silicon Macs,
+a choice of weather model, stroke icons everywhere, closer media sync, much less CPU for blinking status lights, and a
+macOS Accessibility permission that survives updates.
+
+**Languages**
+- Greek (Ελληνικά): the panel, the settings page, the widget and template catalog, the Android pairing dialogs and a
+  Greek README. Pick it under Settings › General › Language, or let the phone's language choose it (#262,
+  [Vasilispapg](https://github.com/Vasilispapg)).
+
+**Widgets**
+- CPU and GPU temperature on Macs with Apple silicon (macOS 14 and later), read from the SMC without root or extra
+  tools: the CPU temp metric and the GPU widget's temperature now work on macOS. The keys follow macmon's rule (CPU:
+  Tp/Te/Ts, GPU: Tg). Intel Macs and older macOS versions still show no temperature (#272,
+  [sonvc94](https://github.com/sonvc94)).
+- Trackpad: move, click and scroll the computer's mouse from the phone, with tap to click, two fingers to right-click
+  and scroll, hold to drag and an optional edge scroll bar. Mouse control is off until you turn on **Allow controlling
+  the mouse from the phone** in the widget's options; Windows, and Linux with `xdotool` under X11 (#250, #251,
+  [Prajjwal2404](https://github.com/Prajjwal2404)).
+- Weather: Settings › General › Weather has a temperature unit, Celsius or Fahrenheit, for the clock's weather line
+  and the Forecast widget (#256, [haydn9000](https://github.com/haydn9000)).
+- Weather: Settings › General › Weather can pin the Open-Meteo forecast model (GFS, ECMWF, ICON, UKMO, GEM, JMA,
+  Météo-France or CMA) instead of Open-Meteo's automatic best match. Only Automatic and GFS supply every value; other
+  models may leave out the UV index or the chance of rain, and the panel then just leaves those out. Météo-France
+  and CMA forecast about 4 and 5 days, and the Forecast widget shows only the days there are (#271,
+  [sonvc94](https://github.com/sonvc94)).
+- Quota ring: provider list includes Cursor and Grok (Grok uses its own mark), and offers every provider currently
+  reported by CodexBar (#260, [ajaybali9](https://github.com/ajaybali9)).
+- AI sessions: Cursor agent chats from `~/.cursor/projects/*/agent-transcripts` can show alongside Claude Code and Codex
+  (off by default in Settings › General › Cursor sessions). Only the last message's role is kept; chat text is never
+  shown, stored or sent. Project names use the folder basename from Cursor's `workspaceStorage`
+  (#259, [ajaybali9](https://github.com/ajaybali9)).
+- Sessions widget: tap a Claude Code session to see what it is doing. The details list its recent steps (tool name and
+  file, with how long a running one has taken), the last exchange, and a scrollable list of the last 30 messages. Your
+  prompts and Claude's replies leave the computer only when you turn on Settings › Claude Code › **Show the
+  conversation on the phone**, which is off by default (#266,
+  [Vasilispapg](https://github.com/Vasilispapg)).
+
+**Panel**
+- Less CPU, so a panel on battery lasts longer: the clock's colon, the session status dots, the OBS light, the on-air
+  sign, the dictation microphone and the radio equalizer no longer run endless CSS animations, which made the phone
+  draw a frame on every display refresh (120 a second on some phones) while they were on screen. On a Galaxy S25 Ultra
+  the clock page went from about 18 % to 9 % of a core. The colon blinks as before; the other lights pulse in two steps
+  instead of fading (#273, #274, [Vasilispapg](https://github.com/Vasilispapg)).
+- Media: the position bar is a slider; hold it to see where the song will continue, and it seeks when you let go. The
+  song time follows the computer more closely, also with Spotify on macOS, which reports no position of its own, and
+  no longer steps back and forth.
+- Volume and media changes reach the phone at once instead of at the next second, and on macOS a volume change takes
+  milliseconds instead of up to a second and a half. While the screen is off or another app is in front, the panel
+  stops asking the agent for updates and catches up when it is back (#268,
+  [Vasilispapg](https://github.com/Vasilispapg)).
+- Pomodoro: the Vietnamese example for your own sequence uses the words the timer understands (`25 focus, 5 break`);
+  copied as shown, the translated words were not understood.
+- Clock widget: a new option chooses which AI quota providers its status line shows; clocks saved before it show
+  all of them, as before (#225, #228, [Seyamalam](https://github.com/Seyamalam)).
+- The computer switch buttons (overview and Computers widget) and the session details close button draw stroke icons
+  instead of an emoji and a text X, so they look the same on older phones (#252,
+  [Seyamalam](https://github.com/Seyamalam)).
+- Sessions widget: with many Claude Code chats in one folder every row read the same. Settings › Claude Code › **Show
+  Claude Code chat titles on the phone** (off by default) shows each chat's title, the name you gave it or the one
+  Claude Code wrote, with the folder on the second line. The title is read from the end of the chat's own file on this
+  computer and, with the switch off, is not read or sent at all (#261, [Vasilispapg](https://github.com/Vasilispapg)).
+- Sessions: claude-mem's background sessions (the short Claude Code runs in `~/.claude-mem/observer-sessions` that
+  write its memory notes) no longer show up, so they no longer pop up a "finished" message every few minutes.
+  Settings › General › Display › **Show a message when a session finishes** turns that message off for every session;
+  the "needs input" message still shows (#275, [TheRedViperV](https://github.com/TheRedViperV)).
+- Session details show Folder, Status, Started and Last activity in one compact row (two rows on a narrow screen)
+  instead of four lines.
+- Every remaining emoji in the panel and the settings page (weather, battery, widget and page icons, Home Assistant
+  and rule icons, media and timer buttons, the moon phase) is drawn as the same Lucide stroke icon, so the panel looks
+  the same on every phone. Emoji saved in your configuration keep working and are shown as the matching icon; one
+  without an icon, or any text, is shown as typed. Icon-only buttons have translated names for screen readers (#265,
+  [Vasilispapg](https://github.com/Vasilispapg)).
+
+**Settings page**
+- Clearer and calmer: section icons and a highlighted current section and page, long introductions folded to two lines
+  (click to open), larger buttons and switches, hover and keyboard-focus states, a spinner on Save and an "Unsaved
+  changes" label, toasts with a mark that screen readers announce, and Escape closes dialogs. Motion stays off with the
+  system's reduce-motion setting (#264, [Vasilispapg](https://github.com/Vasilispapg)).
+
+**Agent**
+- macOS: the Accessibility permission (shortcuts that press keys) carries over to later updates. The agent is signed
+  with PhoneBox's own certificate instead of ad hoc, whose signature changed with every build, so macOS dropped the
+  permission after every update. Updating from an older version needs it once more: remove PhoneBoxAgent under
+  System Settings › Privacy & Security › Accessibility with − and add it again. The setup script and the message on
+  the phone say so (#269, [nejcbat-x](https://github.com/nejcbat-x)).
+- Shortcuts that press keys can use the keypad: `numpad0` to `numpad9`, `numpadenter`, `numpadadd`, `numpadsubtract`,
+  `numpadmultiply`, `numpaddivide` and `numpaddecimal` (also written `num3`, `kp3` or `KP_3`), sent as the keypad's own
+  keys, so a shortcut bound to Ctrl+Alt+Numpad3 in Discord or a game is matched (#270,
+  [adrianhermida](https://github.com/adrianhermida)).
+
+## 0.9.21 — 2026-11-18
+
+Security and reliability fixes from an audit of the agent, the panel, the phone app and the installers, Big buttons
+that show a picture, rules that notice when a pushed value stops arriving, and clearer Wi-Fi setup. Each audit fix came
 with a test that failed before it, kept as a regression test (#234, #235, #236, #237).
 
 **Security**
@@ -20,6 +133,8 @@ with a test that failed before it, kept as a regression test (#234, #235, #236, 
 **Panel**
 - Big button: a new option fills the key with the shortcut's uploaded picture, and another hides its label (#233,
   [dhiya13](https://github.com/dhiya13)).
+- With the panel in Turkish, built-in English widget titles are uppercased with English rules: NOTIFICATIONS, not
+  NOTİFİCATİONS (#240, [menes97](https://github.com/menes97)).
 - Typing in the Note editor no longer triggers panel shortcuts, and Escape (or Back on Android) closes the editor.
 - A late answer from the agent no longer overwrites a newer one, so settings, sessions and pushed values don't jump
   back. A note saved from the phone isn't undone by a reload that was already under way.
@@ -35,6 +150,13 @@ with a test that failed before it, kept as a regression test (#234, #235, #236, 
   clicked without leaving the field, and the two language selectors stay in step.
 
 **Agent**
+- Claude quota widget: with only the Claude Desktop app signed in, it says that the desktop app doesn't share its
+  sign-in and that the `claude` command-line tool is needed, instead of "Not signed in to Claude Code" (#247,
+  [hassanxs](https://github.com/hassanxs)).
+- Linux: the default Calculator, Settings and System Monitor shortcuts start the desktop's own apps on KDE, Xfce,
+  MATE and others when GNOME's are missing (#238, #246, [sateesh2020](https://github.com/sateesh2020)).
+- Rules: a pushed value can trigger a rule when it has no update for N seconds (or isn't there at all), and values
+  can be compared with `>=` and `<=` (#242, #245, [menes97](https://github.com/menes97)).
 - Home Assistant locks and vacuums read their state again before a toggle and do nothing when it is unknown.
 - Panic mute wins over push-to-talk: a microphone it closed (or failed to close) can't be reopened by a hold.
 - OBS, Docker, Spotify and Discord handle disconnects, account changes and malformed messages without stale data.

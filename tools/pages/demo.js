@@ -57,7 +57,7 @@
         { id: 'music', label: 'Music', levels: [], actions: [], output: null, input: null, defaults: {} }],
         spotifyToken: null, spotifyDevice: null, mixerExecutable: null, mixerLibrary: null, spotifyClientId: null, spotifyRefreshToken: null },
       deviceSerial: null, adbPath: null,
-      weather: { city: 'Tallinn', lat: 59.437, lon: 24.745 },
+      weather: { city: 'Tallinn', lat: 59.437, lon: 24.745, unit: 'celsius', model: '' },
       night: { enabled: false, start: '00:30', end: '07:30', brightness: 0.02 },
       display: { appearance: null, showSeconds: true, hour12: false, idleReturnSec: 0, vibrate: true, volumeKeys: true, orientation: 'landscape', theme: 'default', accent: '#2dd4bf',
         pixelShift: false, idleDimMin: 0,
@@ -296,7 +296,8 @@
     const pr = (repo, number, title, ci = null, review = null, draft = false, author = null) => ({ repo, number, title, ci, review, draft, author, updated: n - (number % 9 + 1) * 3600e3 });
     return {
       sessions: [s(1, 'claude', 'api-gateway', 'busy', 4), s(2, 'claude', 'docs-site', 'waiting', 2, 'approve a file edit'), s(3, 'codex', 'mobile-app', 'busy', 11),
-        s(4, 'claude', 'infra', 'shell', 1), s(5, 'claude', 'blog-engine', 'idle', 38), s(6, 'codex', 'data-pipeline', 'idle', 74), s(7, 'claude', 'design-system', 'idle', 125)],
+        s(4, 'claude', 'infra', 'shell', 1), s(5, 'claude', 'blog-engine', 'idle', 38), s(6, 'codex', 'data-pipeline', 'idle', 74), s(7, 'claude', 'design-system', 'idle', 125),
+        s(8, 'cursor', 'phonebox', 'busy', 3), s(9, 'cursor', 'fueltrack', 'idle', 1)],
       github: { user: 'octocat', notifications: 7, error: null, updatedAt: n - 90e3,
         reviewRequests: [pr('acme/api', 412, 'Rate limiter for public endpoints', null, null, false, 'hubot'), pr('acme/web', 1288, 'Dark mode for the dashboard', null, null, false, 'monalisa'),
           pr('acme/infra', 77, 'Move staging to a new region', null, null, false, 'hubot')],
@@ -550,6 +551,22 @@
       return json({});
     }
     if (path === '/api/quotas') return json(quotas());
+    // made-up recent messages and steps of a Claude Code session (the real ones come from its chat file, and only when switched on)
+    if (path === '/api/work/conversation') {
+      const n = Date.now();
+      return json({ enabled: true,
+        messages: [
+          { role: 'user', text: 'Add a retry to the upload helper', at: n - 9 * 60e3 },
+          { role: 'assistant', text: 'I added three retries with a short pause between them and a test for the failing case.', at: n - 7 * 60e3 },
+          { role: 'user', text: 'Does it also cover timeouts?', at: n - 2 * 60e3 },
+          { role: 'assistant', text: 'Yes, a timeout counts as a failed attempt and is retried the same way.', at: n - 60e3 },
+        ],
+        steps: [
+          { tool: 'Read', detail: 'upload.js', at: n - 8 * 60e3, running: false },
+          { tool: 'Edit', detail: 'upload.js', at: n - 7 * 60e3, running: false },
+          { tool: 'Bash', detail: 'npm', at: n - 20e3, running: true },
+        ] });
+    }
     if (path === '/api/calendar') return json(calendar());
     if (path === '/api/docker') return json({ ...docker(), control: allows(await config(), (t) => t === 'docker') });
     if (path === '/api/obs') { const c = await config(); return json({ ...obsState(), enabled: c.obs?.enabled !== false, control: widgets(c).some((w) => w.type === 'obs' && w.options?.control === true) }); }

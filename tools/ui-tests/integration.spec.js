@@ -81,6 +81,20 @@ test('a timer in a stack rings when another page is active', async ({ page }) =>
   await expect(page.locator('#toast')).toContainText('Time is up', { timeout: 1200 });
 });
 
+test('clock status line can hide quota providers', async ({ page }) => {
+  await layout(page, [widget('clock', { providers: ['claude'] })]);
+  const status = page.locator('.w-clock .status');
+  await expect(status).toContainText('Claude');
+  await expect(status).not.toContainText('Codex');
+  await layout(page, [widget('clock', { providers: [] })]);
+  // An early "no Claude" would pass before /api/quotas answers: wait for a rendered status
+  // line and the quota payload, then both providers must be absent.
+  await expect(page.locator('.w-clock .status')).toContainText('82%');
+  await page.waitForFunction(async () => (await import('/panel/main.js')).D.quotas !== null);
+  await expect(page.locator('.w-clock .status')).not.toContainText('Claude');
+  await expect(page.locator('.w-clock .status')).not.toContainText('Codex');
+});
+
 test('quota selection preserves empty selections and explains missing data', async ({ page }) => {
   await layout(page, [widget('quotas', { providers: [] })]);
   await expect(page.locator('.w-quotas')).toContainText('No quota providers enabled');
@@ -98,6 +112,7 @@ test('session sheet shows counters and keeps prompt content out of the panel', a
   await page.getByRole('button', { name: /project/ }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toContainText('test-model');
+  await expect(dialog.locator('button.session-close svg.ico')).toBeVisible();
   await expect(dialog).toContainText('1.2k');
   await expect(dialog).toContainText('read');
   await page.getByRole('button', { name: 'Close session details' }).click();
@@ -404,6 +419,95 @@ test('a new weather location never shows the previous place\'s forecast', async 
   await expect(page.locator('.wx-temp')).not.toHaveText('31°');
 });
 
+// weather.unit converts on the phone: the forecast is cached in °C, so the clock line and both forecast ranges show °F
+// without a new request, a unit change from the settings redraws at the next config poll (not at the next forecast
+// refresh, up to 14 minutes later), and a config that has no unit (saved before the setting existed) stays in °C.
+test('the weather shows Fahrenheit when the settings say so', async ({ page }) => {
+  const now = new Date();
+  const hour = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
+  const forecast = {
+    current: { time: hour, temperature_2m: 31, apparent_temperature: 29.5, weather_code: 0, is_day: 1 },
+    daily: { time: [hour.slice(0, 10)], weather_code: [0], temperature_2m_max: [32], temperature_2m_min: [-5], precipitation_probability_max: [0] },
+    hourly: { time: [hour], weather_code: [0], temperature_2m: [20], precipitation_probability: [0], is_day: [1] },
+  };
+  let requests = 0;
+  await page.route('https://api.open-meteo.com/**', (route) => { requests++; route.fulfill({ json: forecast }); });
+  const widgets = [{ ...widget('clock', { weather: true }), h: 2 }, { ...widget('forecast', { mode: 'daily' }), y: 2, h: 2 }, { ...widget('forecast', { mode: 'hourly' }), y: 4, h: 2 }];
+  await layout(page, widgets, { weather: { city: 'Alpha', lat: 10, lon: 10, unit: 'fahrenheit' } });
+  await expect(page.locator('.wx-temp')).toHaveText('88°');
+  await expect(page.locator('.wx-range')).toHaveText('↑90° ↓23° · Feels like 85°');
+  await expect(page.locator('.fc-v').first()).toHaveText('90° 23°');
+  await expect(page.locator('.fc-v').nth(1)).toHaveText('68°');
+  expect(requests).toBe(1);
+
+  // the settings page saved Celsius: the next config poll redraws from the cached forecast, with no new request
+  await page.evaluate(async () => {
+    const c = JSON.parse(localStorage.getItem('pb-demo-config'));
+    localStorage.setItem('pb-demo-config', JSON.stringify({ ...c, weather: { ...c.weather, unit: 'celsius' } }));
+    const m = await import('./main.js');
+    await m.loadConfig();
+  });
+  await expect(page.locator('.wx-temp')).toHaveText('31°');
+  await expect(page.locator('.wx-range')).toHaveText('↑32° ↓-5° · Feels like 30°');
+  await expect(page.locator('.fc-v').first()).toHaveText('32° -5°');
+  await expect(page.locator('.fc-v').nth(1)).toHaveText('20°');
+  expect(requests).toBe(1);
+
+  await layout(page, widgets, { weather: { city: 'Alpha', lat: 10, lon: 10 } });
+  await expect(page.locator('.wx-temp')).toHaveText('31°');
+  await expect(page.locator('.fc-v').first()).toHaveText('32° -5°');
+});
+
+// weather.model pins the Open-Meteo model: the forecast URL names it, a model change fetches anew instead of keeping the
+// cached forecast for 14 minutes, and Automatic ("") sends no models parameter at all.
+test('the weather asks Open-Meteo for the model the settings pick', async ({ page }) => {
+  const now = new Date();
+  const hour = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:00`;
+  const urls = [];
+  await page.route('https://api.open-meteo.com/**', (route) => {
+    const model = new URL(route.request().url()).searchParams.get('models');
+    urls.push(model);
+    const t = model === 'gfs_seamless' ? 19 : 21;
+    route.fulfill({ json: {
+      current: { time: hour, temperature_2m: t, apparent_temperature: t, weather_code: 3, is_day: 0 },
+      daily: { time: [hour.slice(0, 10)], weather_code: [3], temperature_2m_max: [22], temperature_2m_min: [17], precipitation_probability_max: [0] },
+      hourly: { time: [hour], weather_code: [3], temperature_2m: [t], precipitation_probability: [0], is_day: [0] },
+    } });
+  });
+  const widgets = [{ ...widget('clock', { weather: true }), h: 2 }];
+  await layout(page, widgets, { weather: { city: 'Alpha', lat: 10, lon: 10, model: 'gfs_seamless' } });
+  await expect(page.locator('.wx-temp')).toHaveText('19°');
+  expect(urls).toEqual(['gfs_seamless']);
+
+  await page.evaluate(async () => {
+    const c = JSON.parse(localStorage.getItem('pb-demo-config'));
+    localStorage.setItem('pb-demo-config', JSON.stringify({ ...c, weather: { ...c.weather, model: '' } }));
+    const m = await import('./main.js');
+    await m.loadConfig();
+  });
+  await expect(page.locator('.wx-temp')).toHaveText('21°');
+  expect(urls).toEqual(['gfs_seamless', null]);
+});
+
+// Météo-France and CMA forecast fewer than 7 days and send null for the days after: the forecast stops at the last
+// real day instead of showing "0° 0°" (Math.round(null)) under a blank icon.
+test('a forecast whose last days are null shows only the days it has', async ({ page }) => {
+  const now = new Date();
+  const day = (k) => { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, 12); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const hour = `${day(0)}T${String(now.getHours()).padStart(2, '0')}:00`;
+  const days = [0, 1, 2, 3, 4, 5, 6].map(day);
+  await page.route('https://api.open-meteo.com/**', (route) => route.fulfill({ json: {
+    current: { time: hour, temperature_2m: 12, apparent_temperature: 12, weather_code: 3, is_day: 1 },
+    daily: { time: days, weather_code: [3, 3, 3, 3, null, null, null], temperature_2m_max: [14, 15, 16, 17, null, null, null],
+      temperature_2m_min: [8, 9, 10, 11, null, null, null], precipitation_probability_max: [null, null, null, null, null, null, null] },
+    hourly: { time: [hour], weather_code: [3], temperature_2m: [12], precipitation_probability: [null], is_day: [1] },
+  } }));
+  await layout(page, [{ ...widget('forecast', { mode: 'daily' }), w: 12, h: 3 }], { weather: { city: 'Alpha', lat: 10, lon: 10, model: 'meteofrance_seamless' } });
+  await expect(page.locator('.fc-v').first()).toHaveText('14° 8°');
+  await expect(page.locator('.fc-v')).toHaveCount(4);
+  await expect(page.locator('.fc-v', { hasText: /^0°/ })).toHaveCount(0);
+});
+
 // PRIVACY.md: the phone sends the weather location to Open-Meteo only while a page has a widget that uses the weather.
 test('the weather is fetched only while a widget needs it', async ({ page }) => {
   const asked = [];
@@ -475,7 +579,8 @@ test('the Computers widget lists paired computers and switches between them', as
   await layout(page, [widget('pcswitch')]);
 
   const pcs = page.locator('.w-pcswitch .ov-pc');
-  await expect(pcs).toHaveText(['🖥️ Desk PC', '🖥️ MacBook']);
+  await expect(pcs).toHaveText(['Desk PC', 'MacBook']);
+  await expect(pcs.locator('svg.ico')).toHaveCount(2); // a stroke icon, not the emoji an old WebView draws however it likes
   await expect(pcs.nth(0)).toHaveClass(/\bon\b/);
   await pcs.nth(0).click();
   await pcs.nth(1).click();
@@ -644,4 +749,30 @@ test('a photo frame on a hidden Smart Stack card fetches nothing', async ({ page
   expect(await page.evaluate(() => window.__photoFetches)).toBe(0);
   await page.getByRole('button', { name: 'photos', exact: true }).click();
   await expect(page.locator('.stack-item.active .w-photos .pf-img.on')).toHaveCount(1);
+});
+
+// #258: the Trackpad widget used the native bridge without importing it, so with mouse control on it threw while
+// building in the phone app; the catalogue test builds it with control off and never got that far.
+test('the Trackpad widget sends a tap through the phone bridge when mouse control is on', async ({ browser, baseURL }) => {
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 780, height: 360 } });
+  await ctx.addInitScript(() => {
+    window.__phoneboxKey = 'pb-key-test';
+    window.__tp = [];
+    window.Android = {
+      battery: () => '{}', version: () => 'test', haptic() {}, buzz() {}, setBrightness() {}, setVolumeKeys() {}, is24Hour: () => true,
+      transport: () => 'usb', pcs: () => '[]',
+      trackpad: (key, type) => { if (key === 'pb-key-test') window.__tp.push(type); },
+    };
+  });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await layout(page, [widget('trackpad', { control: true, scrollBar: 'none' })]);
+
+  const pad = page.locator('.deck-trackpad');
+  await expect(pad).not.toHaveClass(/is-disabled/);
+  await pad.click();
+  await expect.poll(() => page.evaluate(() => window.__tp)).toContain('click');
+  expect(errors).toEqual([]);
+  await ctx.close();
 });

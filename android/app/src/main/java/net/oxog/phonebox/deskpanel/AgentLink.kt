@@ -44,7 +44,7 @@ class AgentLink(private val context: Context) {
     private val prefs = context.getSharedPreferences("pairing", Context.MODE_PRIVATE)
 
     /** A computer this phone is paired with; the certificate fingerprint is its id. */
-    private class Pc(val id: String, val name: String, val hosts: List<String>, val port: Int, val token: String) {
+    internal class Pc(val id: String, val name: String, val hosts: List<String>, val port: Int, val token: String) {
         fun json(): JSONObject = JSONObject().put("id", id).put("name", name).put("hosts", JSONArray(hosts)).put("port", port).put("token", token)
         companion object {
             fun from(j: JSONObject) = Pc(j.getString("id"), j.optString("name"),
@@ -83,7 +83,8 @@ class AgentLink(private val context: Context) {
         prefs.edit().putString("pcs", JSONArray().apply { list.forEach { put(it.json()) } }.toString()).putString("active", active).apply()
     }
 
-    private fun activePc(): Pc? = pcs.firstOrNull { it.id == activeId } ?: pcs.firstOrNull()
+    internal fun activePc(): Pc? = pcs.firstOrNull { it.id == activeId } ?: pcs.firstOrNull()
+    internal fun getPinnedFactory(pin: String): SSLSocketFactory = pinnedFactory(pin)
 
     /** The paired computers for the panel: [{"id", "name", "active"}]. */
     fun pcsJson(): String {
@@ -97,12 +98,14 @@ class AgentLink(private val context: Context) {
         savePcs(pcs, id)
         factory = null
         preferredHost = 0
+        trackpadSocket.close()
         return true
     }
 
     fun forget(id: String) = synchronized(pcsLock) {
         val rest = pcs.filter { it.id != id }
         savePcs(rest, if (activeId == id) rest.firstOrNull()?.id else activeId)
+        trackpadSocket.close()
     }
     private val appVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
     // Identifies this phone to the agent (several phones can show different pages): a short hash of the app-scoped
@@ -129,29 +132,107 @@ class AgentLink(private val context: Context) {
     }
 
     /** Forwards a request (method + path with query) to the agent over the best available route. */
-    fun request(method: String, pathAndQuery: String): Reply {
-        usb(method, pathAndQuery)?.let {
+    fun request(method: String, pathAndQuery: String): Reply = request(method, pathAndQuery, null, null)
+
+    fun request(method: String, pathAndQuery: String, body: ByteArray?, contentType: String?): Reply =
+        tryRequest(method, pathAndQuery, body, contentType)
+            ?: Reply(503, "application/json", ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
+
+    /**
+     * Like [request], but null when no route reached the agent. Null means nothing was sent (no connection was made),
+     * so a POST may then go elsewhere (Home Assistant directly) without running twice.
+     */
+    fun tryRequest(method: String, pathAndQuery: String, body: ByteArray? = null, contentType: String? = null): Reply? {
+        usb(method, pathAndQuery, 4000, body, contentType)?.let {
             route = Route.USB
             maybePair()
             return it
         }
-        wifi(method, pathAndQuery)?.let {
+        wifi(method, pathAndQuery, 4000, body, contentType)?.let {
             route = Route.WIFI
             return it
         }
         route = Route.NONE
-        return Reply(503, "application/json", ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
+        return null
     }
 
-    private fun usb(method: String, pathAndQuery: String, readTimeout: Int = 4000): Reply? = try {
+    val trackpadSocket = TrackpadSocket(this)
+
+    private class TrackpadEvent(val type: String, var dx: Float, var dy: Float, var delta: Float)
+    private var inFlight = false
+    private val pendingEvents = java.util.ArrayDeque<TrackpadEvent>()
+    private val httpTrackpadLock = Any()
+
+    fun sendTrackpad(type: String, dx: Float, dy: Float, delta: Float) {
+        if (route == Route.USB || !trackpadSocket.send(type, dx, dy, delta)) {
+            coalesceHttpTrackpad(type, dx, dy, delta)
+        }
+    }
+
+    private fun coalesceHttpTrackpad(type: String, dx: Float, dy: Float, delta: Float) {
+        synchronized(httpTrackpadLock) {
+            if (inFlight) {
+                val last = pendingEvents.peekLast()
+                if (last != null && last.type == type && (type == "move" || type == "scroll")) {
+                    last.dx += dx
+                    last.dy += dy
+                    last.delta += delta
+                } else {
+                    pendingEvents.addLast(TrackpadEvent(type, dx, dy, delta))
+                }
+                return
+            }
+            inFlight = true
+        }
+        dispatchHttpTrackpad(type, dx, dy, delta)
+    }
+
+    private fun dispatchHttpTrackpad(type: String, dx: Float, dy: Float, delta: Float) {
+        background.execute {
+            try {
+                val json = """{"type":"$type","dx":$dx,"dy":$dy,"delta":$delta}""".toByteArray(Charsets.UTF_8)
+                val reply = request("POST", "/api/trackpad", body = json, contentType = "application/json")
+                try { reply.body.close() } catch (_: Exception) {}
+            } finally {
+                var nextType = ""
+                var nextDx = 0f
+                var nextDy = 0f
+                var nextDelta = 0f
+                var hasNext = false
+                synchronized(httpTrackpadLock) {
+                    val next = pendingEvents.pollFirst()
+                    if (next != null) {
+                        nextType = next.type
+                        nextDx = next.dx
+                        nextDy = next.dy
+                        nextDelta = next.delta
+                        hasNext = true
+                    } else {
+                        inFlight = false
+                    }
+                }
+                if (hasNext) {
+                    dispatchHttpTrackpad(nextType, nextDx, nextDy, nextDelta)
+                }
+            }
+        }
+    }
+
+    private fun usb(method: String, pathAndQuery: String, readTimeout: Int = 4000): Reply? =
+        usb(method, pathAndQuery, readTimeout, null, null)
+
+    private fun usb(method: String, pathAndQuery: String, readTimeout: Int, body: ByteArray?, contentType: String?): Reply? = try {
         val c = URL("$USB_BASE$pathAndQuery").openConnection() as HttpURLConnection
         c.connectTimeout = 400 // refused instantly when no adb reverse tunnel exists
-        send(c, method, readTimeout)
+        send(c, method, readTimeout, body, contentType)
     } catch (e: Exception) {
         null
     }
 
-    private fun wifi(method: String, pathAndQuery: String, readTimeout: Int = 4000): Reply? {
+    private fun wifi(method: String, pathAndQuery: String, readTimeout: Int = 4000): Reply? =
+        wifi(method, pathAndQuery, readTimeout, null, null)
+
+    private fun wifi(method: String, pathAndQuery: String, readTimeout: Int, body: ByteArray?, contentType: String?): Reply? {
         val pc = activePc() ?: return null
         val hosts = pc.hosts
         val token = pc.token
@@ -169,7 +250,7 @@ class AgentLink(private val context: Context) {
                 c.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true } // identity is the pinned certificate
                 c.connectTimeout = 1500
                 c.setRequestProperty("Authorization", "Bearer $token")
-                val r = send(c, method, readTimeout)
+                val r = send(c, method, readTimeout, body, contentType)
                 preferredHost = i
                 return r
             } catch (e: Exception) {
@@ -179,7 +260,10 @@ class AgentLink(private val context: Context) {
         return null
     }
 
-    private fun send(c: HttpURLConnection, method: String, readTimeout: Int = 4000): Reply {
+    private fun send(c: HttpURLConnection, method: String, readTimeout: Int = 4000): Reply =
+        send(c, method, readTimeout, null, null)
+
+    private fun send(c: HttpURLConnection, method: String, readTimeout: Int, body: ByteArray?, contentType: String?): Reply {
         // every POST acts on the computer (a container restart, a Home Assistant switch, a macro): none may run twice
         val controlPost = method == "POST"
         c.instanceFollowRedirects = false
@@ -193,7 +277,13 @@ class AgentLink(private val context: Context) {
         c.useCaches = false
         if (method == "POST") {
             c.doOutput = true
-            c.setFixedLengthStreamingMode(0)
+            if (body != null) {
+                if (contentType != null) c.setRequestProperty("Content-Type", contentType)
+                c.setFixedLengthStreamingMode(body.size)
+                c.outputStream.write(body)
+            } else {
+                c.setFixedLengthStreamingMode(0)
+            }
             c.outputStream.close()
         }
         val code = try { c.responseCode } catch (e: java.io.IOException) {
@@ -266,6 +356,7 @@ class AgentLink(private val context: Context) {
 
     fun close() {
         synchronized(pcsLock) { closed = true }
+        trackpadSocket.close()
         background.shutdownNow()
     }
 
@@ -412,5 +503,171 @@ class AgentLink(private val context: Context) {
         private const val USB_BASE = "http://127.0.0.1:8765"
         /** The agent sends "state" every second, so a silent connection for this long is dead. */
         private const val STREAM_READ_TIMEOUT = 8000
+    }
+}
+
+class TrackpadSocket(private val link: AgentLink) {
+    @Volatile private var socket: java.net.Socket? = null
+    @Volatile private var out: java.io.OutputStream? = null
+    @Volatile private var connecting = false
+    private val lock = Any()
+    private val random = java.util.Random()
+
+    fun send(type: String, dx: Float, dy: Float, delta: Float): Boolean {
+        synchronized(lock) {
+            val s = socket
+            val o = out
+            if (s != null && o != null && !s.isClosed) {
+                try {
+                    val json = """{"type":"$type","dx":$dx,"dy":$dy,"delta":$delta}"""
+                    val payload = json.toByteArray(Charsets.UTF_8)
+                    if (payload.size > 125) return false
+                    val mask = ByteArray(4).also { random.nextBytes(it) }
+                    val frame = ByteArray(6 + payload.size)
+                    frame[0] = 0x81.toByte()
+                    frame[1] = (0x80 or payload.size).toByte()
+                    frame[2] = mask[0]
+                    frame[3] = mask[1]
+                    frame[4] = mask[2]
+                    frame[5] = mask[3]
+                    for (i in payload.indices) {
+                        frame[6 + i] = (payload[i].toInt() xor mask[i % 4].toInt()).toByte()
+                    }
+                    o.write(frame)
+                    o.flush()
+                    return true
+                } catch (_: Exception) {
+                    close()
+                }
+            }
+        }
+        ensureConnected()
+        return false
+    }
+
+    @Volatile private var lastAttempt = 0L
+
+    fun ensureConnected() {
+        if (connecting || link.route == AgentLink.Route.USB) return
+        val now = System.currentTimeMillis()
+        if (now - lastAttempt < 3000L) return
+        val pc = link.activePc() ?: return
+        connecting = true
+        lastAttempt = now
+        Thread({
+            try {
+                connect(pc)
+            } finally {
+                connecting = false
+            }
+        }, "trackpad-ws").start()
+    }
+
+    private fun b64(b: ByteArray): String {
+        val t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        val sb = java.lang.StringBuilder()
+        var i = 0
+        while (i < b.size) {
+            val b0 = b[i++].toInt() and 0xFF
+            if (i < b.size) {
+                val b1 = b[i++].toInt() and 0xFF
+                if (i < b.size) {
+                    val b2 = b[i++].toInt() and 0xFF
+                    sb.append(t[b0 ushr 2])
+                    sb.append(t[((b0 and 3) shl 4) or (b1 ushr 4)])
+                    sb.append(t[((b1 and 0xF) shl 2) or (b2 ushr 6)])
+                    sb.append(t[b2 and 0x3F])
+                } else {
+                    sb.append(t[b0 ushr 2])
+                    sb.append(t[((b0 and 3) shl 4) or (b1 ushr 4)])
+                    sb.append(t[(b1 and 0xF) shl 2])
+                    sb.append('=')
+                }
+            } else {
+                sb.append(t[b0 ushr 2])
+                sb.append(t[(b0 and 3) shl 4])
+                sb.append("==")
+            }
+        }
+        return sb.toString()
+    }
+
+    private fun connect(pc: AgentLink.Pc) {
+        val hosts = pc.hosts
+        val port = pc.port
+        val token = pc.token
+        val pin = pc.id
+        val f = link.getPinnedFactory(pin)
+
+        for (host in hosts) {
+            var raw: java.net.Socket? = null
+            try {
+                raw = f.createSocket()
+                raw.tcpNoDelay = true
+                raw.connect(java.net.InetSocketAddress(host, port), 2000)
+                val s = raw as javax.net.ssl.SSLSocket
+                s.soTimeout = 3000
+                s.startHandshake()
+
+                val nonce = ByteArray(16).also { random.nextBytes(it) }
+                val secKey = b64(nonce)
+                val sha = java.security.MessageDigest.getInstance("SHA-1").digest((secKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray(Charsets.US_ASCII))
+                val expectedAccept = b64(sha)
+
+                val writer = java.io.BufferedWriter(java.io.OutputStreamWriter(s.outputStream, Charsets.US_ASCII))
+                writer.write("GET /api/trackpad HTTP/1.1\r\n")
+                writer.write("Host: $host:$port\r\n")
+                writer.write("Upgrade: websocket\r\n")
+                writer.write("Connection: Upgrade\r\n")
+                writer.write("Sec-WebSocket-Key: $secKey\r\n")
+                writer.write("Sec-WebSocket-Version: 13\r\n")
+                writer.write("Authorization: Bearer $token\r\n\r\n")
+                writer.flush()
+
+                val reader = java.io.BufferedReader(java.io.InputStreamReader(s.inputStream, Charsets.US_ASCII))
+                val status = reader.readLine() ?: throw java.io.IOException("No status")
+                if (!status.contains("101")) throw java.io.IOException("Upgrade failed: $status")
+
+                var hasAccept = false
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (line.isEmpty()) break
+                    if (line.startsWith("Sec-WebSocket-Accept:", ignoreCase = true) && line.substringAfter(':').trim() == expectedAccept) {
+                        hasAccept = true
+                    }
+                }
+                if (!hasAccept) throw java.io.IOException("Sec-WebSocket-Accept mismatch")
+                s.soTimeout = 0
+
+                synchronized(lock) {
+                    if (link.activePc()?.id != pin) {
+                        try { s.close() } catch (_: Exception) {}
+                        return
+                    }
+                    socket = s
+                    out = s.outputStream
+                }
+                Thread({
+                    try {
+                        val input = s.inputStream
+                        val buf = ByteArray(64)
+                        while (input.read(buf) != -1) { /* ignore incoming websocket frames */ }
+                    } catch (_: Exception) {}
+                    close(s)
+                }, "trackpad-ws-in").start()
+                return
+            } catch (_: Exception) {
+                try { raw?.close() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    fun close(target: java.net.Socket? = null) {
+        val s = socket
+        if (target == null || s === target) {
+            socket = null
+            out = null
+            try { s?.close() } catch (_: Exception) {}
+        }
     }
 }

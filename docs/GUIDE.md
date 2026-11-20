@@ -11,8 +11,7 @@ Appearance**. Choose Original, Rounded cards, Flat, Content only or Seamless pan
 Pages and individual widgets can override global defaults. Live preview shows unsaved changes before Save.
 Existing layouts keep their original appearance. See the [appearance guide](APPEARANCE.md).
 
-**Unreleased:** OLED burn-in protection is available in the current source tree; see the
-[unreleased changes](../CHANGELOG.md#unreleased) for release status. Under **Settings → General → OLED burn-in protection**:
+**OLED burn-in protection** (since 0.9.9), under **Settings → General → OLED burn-in protection**:
 
 - move the panel by a few pixels every 2 minutes (and the night clock around the screen);
 - dim the panel after a set time without a touch. The touch that brightens it again does not press anything.
@@ -42,7 +41,7 @@ Every page is a 12 × 6 grid. Start a page from one of the 30 templates (or from
 |---|---|
 | **Home** — clock, weather, now playing, CPU / GPU / RAM / network tiles | **Dashboard** — gauges, clock, media and a few shortcut keys |
 | <img src="screenshots/home.png" alt="Home"> | <img src="screenshots/dashboard.png" alt="Dashboard"> |
-| **AI quotas** — Claude and Codex limits, reset times, "at this pace: full in 1 d 5 h" | **Sessions** — Claude Code / Codex sessions and GitHub |
+| **AI quotas** — Claude and Codex limits, reset times, "at this pace: full in 1 d 5 h" | **Sessions** — Claude Code / Codex / Cursor sessions and GitHub |
 | <img src="screenshots/ai.png" alt="AI quotas"> | <img src="screenshots/work.png" alt="Sessions"> |
 | **System** — CPU, GPU, memory, disks, network and ping charts | **Processes** — heaviest apps; tap one to end an instance or all of them |
 | <img src="screenshots/system.png" alt="System"> | <img src="screenshots/procs-sheet.png" alt="Processes"> |
@@ -76,8 +75,8 @@ keeps the screen on.
 |---|---|
 | **Time** | Clock (with status line and weather) · Analog clock (any time zone) · **Word clock** · World clocks · Calendar · **Next up** · Time progress (day / week / month / year) · Countdown · Pomodoro · Quick timer · Stopwatch |
 | **Weather & sky** | Weather · Forecast (hourly / 7 days) · Sun & moon (daylight left, UV, moon phase) · **Moon** · Air quality (European AQI, PM2.5, PM10, O₃, NO₂) |
-| **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · Shortcut grid · Big button (optionally filled with the shortcut's uploaded picture) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) |
-| **AI & code** | AI quotas · Quota ring · AI sessions · GitHub |
+| **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · Shortcut grid · **Big button** (its own picture, label and colour; runs a shortcut or switches a Home Assistant entity, see below) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) · **Trackpad** (control PC cursor, tap to click, hold to drag, scroll) |
+| **AI & code** | AI quotas · Quota ring · AI sessions (Claude Code, Codex, Cursor) · GitHub |
 | **Personal** | **Agenda** (Google / Outlook / iCloud calendars) · Note (edit it from the phone) · Checklist (resets daily) · Counter · Breathe · Quote · Title · Phone battery · **Computers** (switch between paired computers) · **Photo frame** (a slideshow from a photo folder on the PC) |
 | **Web & data** | **Custom HTML** (your own widget, sandboxed) · **Home Assistant** (entities with their own name and icon, tap to switch) · **Pushed value** · **Notifications** (both fed by [webhooks](#webhooks)) · **News feeds** (your RSS and Atom feeds; with its "Open articles on the PC" option, a tap opens the article on the PC) · Hacker News · Exchange rates (ECB) · Crypto prices · Image / webcam · **Camera** (a live picture from an IP camera over RTSP, pulled by ffmpeg on the PC) |
 
@@ -87,6 +86,35 @@ public APIs ([Open-Meteo](https://open-meteo.com), [Frankfurter](https://frankfu
 If the phone has no internet, these five supported HTTPS feeds can fall back through the agent over USB.
 The feed proxy is not available over Wi-Fi. See [PRIVACY.md](../PRIVACY.md) for the services contacted.
 
+**Home Assistant without the PC**: normally the phone asks the agent, which asks Home Assistant. To keep your
+Home Assistant tiles working while the PC is off, turn on **Settings › General › Home Assistant › Phones reach Home
+Assistant themselves when this PC is off**. Paired phones then get an address and a token from the agent, along with
+the entities your Home Assistant widgets list and each one's **Allow switching** setting, and the panel talks to Home
+Assistant directly whenever the agent does not answer.
+
+- Connect the phone to the PC (USB or Wi-Fi) once after turning it on, so the phone picks up the settings; it checks
+  again about once a minute while connected. Turning the option off makes the phone forget them the next time it
+  connects.
+- The phone shows the layout it last got from the PC. Only the Home Assistant widgets keep working; widgets that need
+  the PC wait for it.
+- Use an address the phone can reach, such as `http://192.168.1.10:8123` or `http://homeassistant.local:8123`, not
+  `localhost`. If the PC uses a different address, put the phone's in **Address for phones**. Plain `http://` works
+  only for local addresses (private and Tailscale IPs, `.local`, `.lan`, `.home.arpa`); anything else needs `https://`.
+- Best practice: create a second long-lived token in Home Assistant just for the phones and put it in **Token for
+  phones**, so you can revoke it on its own if the phone is lost.
+
+**Big button** is one large key. In its settings, **When tapped** picks what it does:
+
+- **Run a shortcut**: as before. Its label, emoji and colour come from the shortcut unless you set the button's own.
+- **Home Assistant**: pick an entity from the list. Scripts and scenes run; lights, switches, fans, covers and the like
+  toggle, and the button shows whether they are on. No shortcut and no `curl` command are needed, and the token stays
+  in Settings › General › Home Assistant instead of in a shortcut's command line. With **Phones reach Home Assistant
+  themselves when this PC is off**, these buttons keep working with the PC off.
+
+**Picture** uploads a PNG, WEBP or SVG (up to 512 KB) for the button itself, and **Fill the button with its picture**
+makes it the background. The phone keeps the pictures, so the buttons look the same while the PC is off. A button
+set to a shortcut without its own picture uses the shortcut's, as before.
+
 **Camera** shows an IP camera that streams over RTSP. Add it in **Settings › General › Cameras** with a name and its
 RTSP address (`rtsp://user:password@192.168.1.20:554/…`; the camera's manual or app has the exact path), then pick it
 in the widget. The agent pulls the stream with [ffmpeg](https://ffmpeg.org), which you install: `winget install
@@ -94,6 +122,8 @@ Gyan.FFmpeg` on Windows, `brew install ffmpeg` on macOS, your distribution's `ff
 PhoneBox afterwards so it finds ffmpeg in PATH, or enter ffmpeg's full path in the same card. A camera runs only while
 a Camera widget for it is on the phone's screen, at 5 frames a second by default; pick 1 to 10 next to the camera (smoother costs more CPU on the PC and more data to the phone), and expect a short delay. Choose
 **UDP** for a camera that doesn't stream over TCP. At most 4 cameras play at the same time.
+
+**Trackpad** turns a tile into a laptop-style touchpad for the computer with precision acceleration, tap to click, two fingers to right-click, hold to drag, and two-finger scrolling or an optional edge scrollbar. For safety, mouse control is turned off by default: check **Allow controlling the mouse from the phone** in the widget's settings on an enabled page. Supported on Windows (native input) and Linux (with `xdotool` under X11; Wayland sessions block synthetic mouse input); macOS is not supported yet.
 
 **Smart Stack** combines up to 12 widgets in one slot. Add it from the Layout category, then drag widgets into it or
 use its picker. Reorder cards, open their settings, or disable individual cards. Tap the dots or swipe vertically to
@@ -107,6 +137,10 @@ Local Claude, Codex and Antigravity sources keep refreshing when CodexBar is abs
 provide defaults; a widget's own options override them, including an empty provider selection.
 Install a compatible CLI from [CodexBar](https://github.com/steipete/CodexBar) if available for your system.
 PhoneBox uses native local sources when no compatible CLI is installed.
+
+**Claude quotas** need the sign-in of the Claude Code command-line tool (run `claude` and sign in). The Claude Desktop
+app keeps its own sign-in to itself, so with only the desktop app the widget shows the plan and says so; its sessions
+still show up in the Sessions widget.
 
 **Native Antigravity quotas** use a running app/hub's advertised HTTP port and CSRF token, the HTTPS port of newer
 IDE servers (2.32 picks it at start-up, so the agent tries the loopback ports that server process listens
@@ -136,10 +170,10 @@ Double-click the tray icon on Windows (or open <http://127.0.0.1:8765>):
   combination (`ctrl+shift+m`), types text or runs a macro (keys, text, waits, other shortcuts); on / off keys show
   their state on the phone (mute does by itself, others from a pushed value).
 - **Webhooks**: the webhook key, copy-paste examples, test buttons and the values pushed so far.
-- **General**: weather location search; calendars (ICS links from Google, Outlook or iCloud), Home Assistant and OBS
+- **General**: weather location search, the temperature unit (°C or °F) and the forecast model; calendars (ICS links from Google, Outlook or iCloud), Home Assistant and OBS
   connections; night mode; theme and accent colour, orientation (landscape, portrait or follow the phone), clock seconds,
-  vibration, volume-key paging and the phone's sensors (brightness that follows the room, the night screen when the
-  room goes dark, wave to wake it); [OLED burn-in protection (unreleased)](#appearance); [page switching](#rules) (home page, countdown, back home after);
+  vibration, the message when a session finishes, volume-key paging and the phone's sensors (brightness that follows the room, the night screen when the
+  room goes dark, wave to wake it); [OLED burn-in protection](#appearance); [page switching](#rules) (home page, countdown, back home after);
   kiosk options (screen pinning, the panel as the phone's home screen so it starts after a reboot, keep the phone
   awake on the charger; no root needed); on macOS, optionally follow the computer lock (sleep the phone on lock,
   wake it and open PhoneBox on unlock, with an ADB connection; phones secured by a PIN or password must be unlocked
@@ -215,7 +249,8 @@ for senders that cannot set headers). That key opens only the webhook endpoints,
 | the CPU stays above a percentage for 15 s | |
 | you have been away from the keyboard for N minutes | |
 | it is between two times (`22:00-07:00`) | |
-| a pushed value is on, or above / below / equal to a value (a webhook from Home Assistant, a doorbell…) | run a shortcut |
+| a pushed value is on, or above / at least / below / at most / equal to a value (a webhook from Home Assistant, a doorbell…) | run a shortcut |
+| a pushed value has had no update for N seconds (a sensor or a bridge stopped posting). A missing value (never pushed, deleted, or expired by its `ttl`) counts at once, however recent its last push, but only after the agent has run for N seconds | |
 | an AI quota is above a percentage | |
 | a GitHub review is requested · CI fails on my pull request | |
 | a device battery is low · the network is slow or unreachable | |
@@ -251,6 +286,9 @@ switchable ports). The panel keeps running over Wi-Fi while the USB power is off
   with the paired key. Settings, shortcut tests and pairing stay local. **New key** in the settings unpairs all phones.
 - The phone only ever sends a shortcut **id**; commands are defined on the PC. Command widgets work the same way:
   the phone asks for a widget's output and never sees the command.
+- The Home Assistant token stays on the PC unless you turn on **Phones reach Home Assistant themselves when this PC
+  is off**; then paired phones keep the phone token (or the PC's, if you leave it empty) in the app's private storage,
+  out of the panel's reach, and use it only while the PC does not answer.
 - `config.json` (with the Wi-Fi, webhook and Home Assistant keys), its backup and the pushed data are readable only by
   your user on macOS and Linux (0600); on Windows they live in your profile folder.
 - Webhooks from other machines need the separate webhook key, which cannot open the phone API and can be replaced
@@ -266,7 +304,9 @@ switchable ports). The panel keeps running over Wi-Fi while the USB power is off
   longer after errors and as long as a `429` asks for, across restarts too. An expired or refused token is not sent:
   PhoneBox waits until Claude Code renews it.
 - **Codex quota and sessions** are read from local files in `~/.codex/sessions`; Claude Code sessions from
-  `~/.claude/sessions`.
+  `~/.claude/sessions`. Cursor sessions (opt-in in **Settings › General › Cursor sessions**) come from recent agent
+  transcripts under `~/.cursor/projects/*/agent-transcripts`. Only the last message's role is kept; chat text is never
+  shown, stored or sent. Project names use the folder basename from Cursor's `workspaceStorage`.
 - **Native Antigravity quota:** the agent reads the running Antigravity server's port and CSRF token from its
   process arguments and queries its loopback quota/status API, or invokes the signed-in CLI's structured usage
   command. Only measured quota fields reach the panel; CLI conversation identifiers and token counters are omitted.

@@ -96,8 +96,12 @@ curl -fsSL https://raw.githubusercontent.com/ersinkoc/phonebox/main/setup.sh | b
 - **Linux USB permissions**: if `adb devices` shows `no permissions`, adb also needs udev rules. Install
   `android-sdk-platform-tools-common` on Debian/Ubuntu or `android-udev` on Arch. Some systems also need the
   `plugdev` group (`sudo usermod -aG plugdev $USER`, then log out and in). Setup points this out when it happens.
-- **On macOS**, the agent is signed ad hoc, not with an Apple Developer ID. The first time, macOS may ask whether
-  it may control Music or Spotify (for Now Playing), or accept incoming connections (with Wi-Fi on).
+- **On macOS**, the agent is signed with PhoneBox's own certificate, not an Apple Developer ID. The first time,
+  macOS may ask whether it may control Music or Spotify (for Now Playing), or accept incoming connections (with Wi-Fi
+  on). Shortcuts that press keys need *System Settings › Privacy & Security › Accessibility* for PhoneBoxAgent; it
+  carries over to later updates. Before 0.9.22 the agent was signed ad hoc, and macOS dropped the permission with every
+  update, so after updating from an older version allow it once more: remove PhoneBoxAgent there with *−* and add it
+  again, even if it is listed and switched on ([#269](https://github.com/ersinkoc/phonebox/issues/269)).
 - **Windows USB drivers**: if the phone never appears, Windows may need its USB driver. Google phones use the
   Google USB Driver; other brands have one on their support site.
 - **Scoop users**: setup stops if PhoneBox is installed with Scoop, so two copies don't fight over the same port.
@@ -150,6 +154,20 @@ The settings are at <http://127.0.0.1:8765>, on Windows also from the tray icon.
   git clone https://github.com/ersinkoc/phonebox && cd phonebox
   ./scripts/install.sh --apk --autostart  # systemd user service (Linux) or launchd agent (macOS)
   ```
+
+### Stop and start the agent
+
+On Windows, use **Quit** in the tray menu; with **Start with Windows** on, it starts again at the next sign-in.
+On Linux, setup installs a systemd user service named `phonebox` (no sudo needed):
+
+```sh
+systemctl --user stop phonebox            # off until the next login; start / restart / status work the same way
+systemctl --user disable --now phonebox   # off, and no longer started at login (enable --now turns both back on)
+```
+
+On macOS, `launchctl unload ~/Library/LaunchAgents/net.oxog.phonebox.agent.plist` stops it, and `launchctl load`
+with the same path starts it again. While the agent is off, the phone shows that it is offline and reconnects by
+itself once the agent runs again.
 
 ### Uninstall
 
