@@ -582,5 +582,7 @@ public sealed class SessionMonitor(ILogger<SessionMonitor> log, ConfigStore? con
 /// <summary>The "work" data the phone gets, on the live stream and on the polling path alike: sessions and GitHub.</summary>
 public static class WorkFeed
 {
-    public static object Build(SessionMonitor sessions, GitHubMonitor gh) => new { sessions = sessions.Snapshot(), github = gh.Snapshot() };
+    /// <param name="held">Claude Code sessions waiting for Continue / Retry from the Claude actions widget (the Stop hook).</param>
+    public static object Build(SessionMonitor sessions, GitHubMonitor gh, ClaudeActions? held = null) =>
+        new { sessions = sessions.Snapshot(), github = gh.Snapshot(), held = held?.Snapshot() ?? [] };
 }

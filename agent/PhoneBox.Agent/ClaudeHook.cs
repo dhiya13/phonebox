@@ -122,34 +122,47 @@ public static class ClaudeHook
     private static string? Str(JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
-    // ---------------------------------------------------------------- install / remove the hook in ~/.claude/settings.json
+    // ---------------------------------------------------------------- install / remove the hooks in ~/.claude/settings.json
 
-    private static string HookCommand(int port) =>
-        $"{(OperatingSystem.IsWindows() ? "curl.exe" : "curl")} -s --max-time 3600 -X POST http://127.0.0.1:{port}{Endpoint} -H \"Content-Type: application/json\" --data-binary \"@-\"";
+    private static string HookCommand(int port, string endpoint) =>
+        $"{(OperatingSystem.IsWindows() ? "curl.exe" : "curl")} -s --max-time 3600 -X POST http://127.0.0.1:{port}{endpoint} -H \"Content-Type: application/json\" --data-binary \"@-\"";
 
     private static bool IsOurs(JsonNode? hook) =>
         hook is JsonObject obj && obj["command"] is JsonValue v && v.TryGetValue<string>(out var cmd)
-        && cmd.Contains(Endpoint, StringComparison.Ordinal);
+        && (cmd.Contains(Endpoint, StringComparison.Ordinal) || cmd.Contains(ClaudeActions.Endpoint, StringComparison.Ordinal));
 
+    /// <summary>The PermissionRequest hook (Allow / Deny on the phone) is in ~/.claude/settings.json.</summary>
     public static bool Installed() => Installed(SettingsPath);
 
-    internal static bool Installed(string path)
+    internal static bool Installed(string path) => HasHook(path, "PermissionRequest");
+
+    /// <summary>The Stop hook (Continue / Retry from the Claude actions widget) is there too; hooks installed before 0.9.22.8 lack it.</summary>
+    public static bool StopInstalled() => StopInstalled(SettingsPath);
+
+    internal static bool StopInstalled(string path) => HasHook(path, "Stop");
+
+    private static bool HasHook(string path, string hookEvent)
     {
         try
         {
             var root = JsonNode.Parse(File.ReadAllText(path), documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
             return root is JsonObject obj
                 && obj["hooks"] is JsonObject hooks
-                && hooks["PermissionRequest"] is JsonArray groups
+                && hooks[hookEvent] is JsonArray groups
                 && groups.Any(g => g is JsonObject go && go["hooks"] is JsonArray hs && hs.Any(IsOurs));
         }
         catch { return false; }
     }
 
-    /// <summary>Adds (or, with install = false, removes) the PhoneBox hook, keeping everything else and a backup.</summary>
+    /// <summary>Adds (or, with install = false, removes) the PhoneBox hooks, keeping everything else and a backup.</summary>
     public static string? Configure(bool install, int port, int timeoutSec) =>
         Configure(install, port, timeoutSec, SettingsPath);
 
+    /// <summary>
+    /// Two hooks: PermissionRequest (Allow / Deny) and Stop (Continue / Retry). The Stop hook answers at once with
+    /// nothing unless a Claude actions widget allows answering from the phone, so installing it changes nothing else.
+    /// Its timeout is the longest wait Settings allows, so changing that setting needs no new install.
+    /// </summary>
     internal static string? Configure(bool install, int port, int timeoutSec, string path)
     {
         try
@@ -173,32 +186,42 @@ public static class ClaudeHook
             if (root["hooks"] is { } hooksNode && hooksNode is not JsonObject)
                 throw new InvalidDataException("\"hooks\" in settings.json is not a JSON object");
             var hooks = root["hooks"] as JsonObject ?? new JsonObject();
-            if (hooks["PermissionRequest"] is { } groupsNode && groupsNode is not JsonArray)
-                throw new InvalidDataException("\"hooks.PermissionRequest\" in settings.json is not a list");
-            var groups = hooks["PermissionRequest"] as JsonArray ?? new JsonArray();
-            // drop our old entries (and groups that become empty)
-            foreach (var g in groups.ToList())
+            (string Event, string Endpoint, int Timeout, string? Matcher)[] ours =
+            [
+                ("PermissionRequest", Endpoint, Math.Clamp(timeoutSec, 10, 3600) + 15, "*"),
+                ("Stop", ClaudeActions.Endpoint, ClaudeConfig.ClampHold(int.MaxValue) * 60 + 30, null),
+            ];
+            foreach (var (hookEvent, _, _, _) in ours)
+                if (hooks[hookEvent] is { } groupsNode && groupsNode is not JsonArray)
+                    throw new InvalidDataException($"\"hooks.{hookEvent}\" in settings.json is not a list");
+            foreach (var (hookEvent, endpoint, timeout, matcher) in ours)
             {
-                if (g is not JsonObject go || go["hooks"] is not JsonArray hs) continue;
-                foreach (var h in hs.Where(IsOurs).ToList()) hs.Remove(h);
-                if (hs.Count == 0) groups.Remove(g);
-            }
-            if (install)
-                groups.Add(new JsonObject
+                var groups = hooks[hookEvent] as JsonArray ?? new JsonArray();
+                // drop our old entries (and groups that become empty)
+                foreach (var g in groups.ToList())
                 {
-                    ["matcher"] = "*",
-                    ["hooks"] = new JsonArray(new JsonObject
+                    if (g is not JsonObject go || go["hooks"] is not JsonArray hs) continue;
+                    foreach (var h in hs.Where(IsOurs).ToList()) hs.Remove(h);
+                    if (hs.Count == 0) groups.Remove(g);
+                }
+                if (install)
+                {
+                    var group = new JsonObject();
+                    if (matcher is not null) group["matcher"] = matcher;
+                    group["hooks"] = new JsonArray(new JsonObject
                     {
                         ["type"] = "command",
-                        ["command"] = HookCommand(port),
-                        ["timeout"] = Math.Clamp(timeoutSec, 10, 3600) + 15,
-                    }),
-                });
-            if (groups.Count > 0)
-            {
-                if (!ReferenceEquals(hooks["PermissionRequest"], groups)) hooks["PermissionRequest"] = groups;
+                        ["command"] = HookCommand(port, endpoint),
+                        ["timeout"] = timeout,
+                    });
+                    groups.Add(group);
+                }
+                if (groups.Count > 0)
+                {
+                    if (!ReferenceEquals(hooks[hookEvent], groups)) hooks[hookEvent] = groups;
+                }
+                else hooks.Remove(hookEvent);
             }
-            else hooks.Remove("PermissionRequest");
             if (hooks.Count > 0)
             {
                 if (!ReferenceEquals(root["hooks"], hooks)) root["hooks"] = hooks;

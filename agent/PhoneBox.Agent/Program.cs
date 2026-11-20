@@ -67,6 +67,7 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<ControlDeck>());
 builder.Services.AddSingleton<PushStore>();
 builder.Services.AddSingleton<CommandRunner>();
 builder.Services.AddSingleton<ApprovalStore>();
+builder.Services.AddSingleton<ClaudeActions>();
 builder.Services.AddSingleton<HomeAssistant>();
 builder.Services.AddSingleton<AppConsole>();
 builder.Services.AddSingleton<Dictation>();
@@ -634,7 +635,7 @@ app.MapGet("/api/state", (long? ev, HttpContext ctx) => Results.Json(State(ctx.R
 // One "state" frame for all open streams: they wake on the same second (below), so the state is built and serialized once
 // per tick, not once per phone. Everything State() reads is a singleton, so the root provider will do.
 var stateFrames = new StateFrameCache(() => State(app.Services, null), new JsonSerializerOptions(JsonSerializerDefaults.Web));
-app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor sessions, GitHubMonitor gh, SpectrumAnalyzer spectrum, ILogger<Program> log) =>
+app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor sessions, GitHubMonitor gh, ClaudeActions held, SpectrumAnalyzer spectrum, ILogger<Program> log) =>
 {
     var ct = ctx.RequestAborted;
     var isPhone = ctx.Request.Headers.ContainsKey("X-PhoneBox-App");
@@ -681,7 +682,7 @@ app.MapGet("/api/stream", async (HttpContext ctx, PushStore push, SessionMonitor
             {
                 if (tick++ % 2 == 0)
                 {
-                    var work = WorkFeed.Build(sessions, gh);
+                    var work = WorkFeed.Build(sessions, gh, held);
                     var json = JsonSerializer.Serialize(work, opts);
                     if (json != lastWork) { lastWork = json; await Send("work", work); }
                 }
@@ -723,7 +724,17 @@ app.MapPost(ClaudeHook.Endpoint, async (HttpRequest req, ConfigStore cfg, Approv
     var output = await ClaudeHook.HandleAsync(input, cfg, approvals, sessions, req.HttpContext.RequestAborted);
     return output is null ? Results.Text("") : Results.Json(output);
 });
-app.MapGet("/api/claude/hook", () => Results.Json(new { installed = ClaudeHook.Installed(), path = ClaudeHook.SettingsPath }));
+// Claude Code Stop hook (local only): a session that finished while you are away waits for Continue / Retry from the
+// Claude actions widget, if one allows it; prints nothing otherwise (see ClaudeActions.cs).
+app.MapPost(ClaudeActions.Endpoint, async (HttpRequest req, ClaudeActions actions) =>
+{
+    JsonElement input;
+    try { input = (await JsonDocument.ParseAsync(req.Body)).RootElement.Clone(); }
+    catch (JsonException) { return Results.Text(""); }
+    var output = await actions.HoldAsync(input, req.HttpContext.RequestAborted);
+    return output is null ? Results.Text("") : Results.Json(output);
+});
+app.MapGet("/api/claude/hook", () => Results.Json(new { installed = ClaudeHook.Installed(), stop = ClaudeHook.StopInstalled(), path = ClaudeHook.SettingsPath }));
 app.MapPost("/api/claude/hook", (ConfigStore cfg) => ClaudeHook.Configure(true, Port, cfg.Get().Claude.TimeoutSec) is { } err ? Results.BadRequest(new { error = err }) : Results.Ok());
 app.MapDelete("/api/claude/hook", (ConfigStore cfg) => ClaudeHook.Configure(false, Port, cfg.Get().Claude.TimeoutSec) is { } err ? Results.BadRequest(new { error = err }) : Results.Ok());
 
@@ -736,7 +747,20 @@ app.MapGet("/api/work/conversation", (string id, ConfigStore cfg, SessionMonitor
 
 // Permission prompts waiting for the phone (posted by the Claude Code hook, see ClaudeHook.cs).
 app.MapGet("/api/approvals", (ApprovalStore a) => Results.Json(new { items = a.Snapshot() }));
-app.MapPost("/api/approvals/{id}", (string id, string decision, ApprovalStore a) => a.Decide(id, decision) ? Results.Ok() : Results.NotFound());
+// The approval card answers without a widget; the Claude actions widget names itself, and only one that allows
+// answering from the phone may (the same Decide either way: there is one way to answer a prompt).
+app.MapPost("/api/approvals/{id}", (string id, string decision, string? widget, HttpRequest req, ConfigStore cfg, ApprovalStore a) =>
+{
+    if (widget is not null && !ClaudeActions.WidgetAllows(cfg.Get(), req.Headers["X-PhoneBox-Device"].ToString(), widget))
+        return Results.Json(new { error = "answering is off: turn on \"Allow answering from the phone\" in the Claude actions widget's settings" }, statusCode: 403);
+    return a.Decide(id, decision) ? Results.Ok() : Results.NotFound();
+});
+// Continue / Retry / Done for a session the Stop hook holds (Claude actions widget, only one that allows it).
+app.MapPost("/api/claude/held/{id}", (string id, string? action, string? widget, HttpRequest req, ClaudeActions actions) =>
+{
+    var (status, error) = actions.Decide(req.Headers["X-PhoneBox-Device"].ToString(), widget, id, action);
+    return error is null ? Results.Ok(new { ok = true }) : Results.Json(new { error }, statusCode: status);
+});
 
 // Spectrum bars widget: each call keeps audio capture running for a few seconds and returns the latest bands
 // (the live stream also sends them as "spectrum" events; panels without the stream poll this instead).
@@ -809,7 +833,7 @@ app.MapPost("/api/volume", (int? level, string? op, AudioControl audio) =>
 
 app.MapGet("/api/quotas", (QuotaMonitor q) => Results.Json(new { providers = q.Snapshot(), overview = q.Overview() }));
 
-app.MapGet("/api/work", (SessionMonitor s, GitHubMonitor gh) => Results.Json(WorkFeed.Build(s, gh)));
+app.MapGet("/api/work", (SessionMonitor s, GitHubMonitor gh, ClaudeActions held) => Results.Json(WorkFeed.Build(s, gh, held)));
 
 app.MapGet("/api/proxy", (string? url, CancellationToken ct) => WidgetFeedProxy.FetchAsync(url, ct));
 
