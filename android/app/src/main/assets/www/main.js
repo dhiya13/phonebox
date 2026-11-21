@@ -1519,6 +1519,8 @@ export function requestPage(d) {
   const page = resolvePage(d.page);
   if (page < 0) return;
   const rule = d.rule || null;
+  // the PC came back and a rule wants a page: the one-off trip home gives way
+  if (!d.pcOff) navQueue = navQueue.filter((r) => r.pcOff !== 'back');
   if (rule) {
     // the rule ended and came back before its "back" ran: just stay
     const back = navQueue.find((r) => r.kind === 'back' && r.rule === rule);
@@ -1526,7 +1528,7 @@ export function requestPage(d) {
     if (back && ruleHold?.rule === rule && curPage === ruleHold.page) { ruleHold.at = Date.now(); return pump(); }
   }
   navQueue.push({ kind: 'goto', rule, name: d.name || null, detail: d.detail || '', page, hold: !!(d.hold && rule),
-    priority: d.priority ?? 5, countdown: d.countdown, at: Date.now() });
+    priority: d.priority ?? 5, countdown: d.countdown, pcOff: d.pcOff || null, at: Date.now() });
   soon();
 }
 
@@ -1552,7 +1554,7 @@ function idleDue() {
   const maxHold = (dsp().holdMaxMin ?? 30) * 60_000;
   const held = ruleHold && curPage === ruleHold.page && (!maxHold || Date.now() - ruleHold.at < maxHold);
   return !held && Date.now() - Math.max(lastTouch, lastNav) > idle * 1000
-    && (curPage !== homeIndex() || !!sheet || !$('overview').hidden);
+    && (curPage !== idleHome() || !!sheet || !$('overview').hidden);
 }
 
 function softGo(i) {
@@ -1584,7 +1586,7 @@ function perform(req) {
   } else {
     ruleHold = null;
     closeSheet(); closeOverview();
-    softGo(homeIndex());
+    softGo(idleHome());
   }
   if (req.kind !== 'home') lastAutoSwitch = Date.now();
   lastNav = Date.now();
@@ -1658,7 +1660,7 @@ function renderNav(req = null, why = '') {
   const wakeKey = why ? req : navCount;
   if (wakeKey !== navWoken) { navWoken = wakeKey; undim(); }
   const name = req.name || (req.kind === 'home' ? t('panel.nobodyAround') : req.kind === 'back' ? t('panel.done') : t('panel.pageSwitch'));
-  const target = req.kind === 'home' ? pageLabel(homeIndex()) : pageLabel(req.page);
+  const target = req.kind === 'home' ? pageLabel(idleHome()) : pageLabel(req.page);
   const more = navQueue.length > 1 ? ` +${navQueue.length - 1}` : '';
   if (why) {
     card.classList.remove('on');
@@ -2153,8 +2155,36 @@ export function setOnline(on) {
   if (on && online !== true) { loadConfig(); loadQuotas(); loadWork(); loadPush(); loadApprovals(); loadCalendar(); }
   const changed = online !== on;
   online = on;
+  pcOffWatch(on);
   if (changed) emit('state');
 }
+
+// ================================================================= the PC is off
+// Settings › Page switching › "When the PC is off, show page": once the agent has not answered for display.pcOffSec
+// seconds the panel asks for that page (the agent is off, so no rule can do it); when the agent answers again it asks
+// for the home page once and leaves the rest to the rules. That one request gives way to anything else: a rule that
+// asks for a page after the PC is back (music playing) wins, so the two never take turns. While the PC is off the idle
+// return goes to that page instead of home, which needs the PC for most of what it shows.
+let offlineSince = 0;
+export let pcOff = false;     // the panel moved for "the PC is off" and the PC has not answered since
+const pcOffIndex = () => (dsp().pcOffPage ? resolvePage(dsp().pcOffPage) : -1);
+function pcOffWatch(on) {
+  if (PREVIEW) return;
+  if (!on) {
+    if (!offlineSince) offlineSince = Date.now();
+    if (pcOff || pcOffIndex() < 0) return;
+    if (Date.now() - offlineSince < Math.max(1, dsp().pcOffSec ?? 30) * 1000) return;
+    pcOff = true;
+    if (pcOffIndex() !== curPage) requestPage({ page: pcOffIndex() + 1, name: t('panel.pcOff'), priority: 9, pcOff: 'off' });
+    return;
+  }
+  offlineSince = 0;
+  if (!pcOff) return;
+  pcOff = false;
+  navQueue = navQueue.filter((r) => !r.pcOff);
+  if (curPage !== homeIndex()) requestPage({ page: homeIndex() + 1, name: t('panel.pcBack'), priority: 1, pcOff: 'back' });
+}
+const idleHome = () => (pcOff && pcOffIndex() >= 0 ? pcOffIndex() : homeIndex());
 
 export function applyState(s, replayGen = null) {
   lastStateAt = Date.now();

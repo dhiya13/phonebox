@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.9.22.11 — 2026-11-21
+
+**Panel**
+- **When the PC is off, show page** (Settings › General › Page switching, off by default): once the phone hasn't
+  reached the PC for 30 seconds (adjustable, 5–600) it switches to the page you pick, and while the PC stays off the
+  idle return goes there instead of home. When the PC answers again the phone goes home **once**; a rule that asks for
+  a page at that moment (music playing) wins and the trip home is dropped, so the two never take turns. The phone does
+  this itself, since the agent isn't running then.
+- **Big button › Wake this PC**: turns this PC on with Wake-on-LAN. Says whether the packet went out, whether the PC
+  is already on, or that the phone hasn't learned the PC's address yet.
+
+**Agent**
+- `GET /api/wol` hands paired phones the MAC address, IPv4 address and network broadcast address of this PC's wired
+  adapter (physical adapters only: VPNs, Hyper-V / WSL switches, TAP and Bluetooth are skipped; wired before Wi-Fi),
+  like the Home Assistant hand-off. Open over Wi-Fi with the paired key. The settings show which adapter the button wakes.
+
+**Phone app**
+- Sends the Wake-on-LAN magic packet itself (UDP broadcast to ports 9 and 7, to the PC's network broadcast, the Wi-Fi
+  network's own broadcast and 255.255.255.255, twice), bound to the Wi-Fi network so a VPN such as Tailscale doesn't
+  carry it away. It fetches the PC's address about every ten minutes while connected and keeps it for when the PC is off.
+
 ## 0.9.22.9 — 2026-11-20
 
 **Panel**

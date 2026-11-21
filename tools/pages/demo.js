@@ -662,6 +662,8 @@
       if (!allows(await config(), isObs)) return json({ error: "controlling OBS is turned off in the widget's settings" }, 400);
       return obsAct(path.slice(9), q.get('scene')) ? json({ ok: true }) : json({ error: 'unknown action' }, 400);
     }
+    if (path === '/api/wol') return json({ mac: '00:11:22:33:44:55', broadcast: '192.168.1.255', address: '192.168.1.20', name: 'Ethernet' });
+    if (path === '/api/wol/wake' && method === 'POST') return json({ ok: true, awake: true });
     if (path === '/api/ha/entities') return json({ configured: true, error: null, entities: Object.keys(ha).sort().map((id) => ({ id, name: ha[id].name, switchable: /^(light|switch|lock|scene)\./.test(id) })) });
     if (path === '/api/ha/states') return json(haStates((q.get('ids') || '').split(',').filter(Boolean)));
     if (path.startsWith('/api/ha/toggle/') && method === 'POST') { haToggle(decodeURIComponent(path.slice(15))); return json({ ok: true }); }

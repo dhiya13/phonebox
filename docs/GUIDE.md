@@ -110,6 +110,18 @@ Assistant directly whenever the agent does not answer.
   toggle, and the button shows whether they are on. No shortcut and no `curl` command are needed, and the token stays
   in Settings › General › Home Assistant instead of in a shortcut's command line. With **Phones reach Home Assistant
   themselves when this PC is off**, these buttons keep working with the PC off.
+- **Wake this PC**: turns this PC on with Wake-on-LAN. The PC is off when you need it, so the phone sends the "magic
+  packet" itself (UDP broadcast to ports 9 and 7 on its Wi-Fi network, around a VPN such as Tailscale when the VPN
+  allows it). While the PC is on, the phone learns the hardware (MAC) address and network of its wired adapter (the
+  settings show which one: physical adapters only, wired before Wi-Fi), so connect once after adding the button. The
+  phone has to be on the same network as the PC. For the PC to listen while it is off:
+  - in **Device Manager › Network adapters ›** your Ethernet adapter **› Advanced**, set **Wake on Magic Packet** to
+    Enabled (Realtek adapters also have **Shutdown Wake-On-Lan**: Enabled), and on **Power Management** tick **Allow
+    this device to wake the computer**;
+  - in the BIOS / UEFI, turn on wake-on-LAN (it may be called **Wake on LAN**, **Power On By PCI-E**, **Resume by PCI-E
+    device**) and turn off **ErP** / **Deep Sleep**, which cut power to the network card;
+  - Fast Startup can stop wake from a full shutdown on some boards: turn it off in Control Panel › Power Options ›
+    Choose what the power buttons do if waking works from sleep but not from shut down.
 
 **Picture** uploads a PNG, WEBP or SVG (up to 512 KB) for the button itself, and **Fill the button with its picture**
 makes it the background. The phone keeps the pictures, so the buttons look the same while the PC is off. A button
@@ -291,6 +303,13 @@ dropped, so a burst of rules never bounces the screen back and forth. Settings �
 countdown, how long to wait after a touch, the minimum time between switches, the home page and how long a rule may
 keep its page (30 minutes by default, so a rule that never ends can't hold the panel for good; 0 keeps it for as long
 as the rule lasts). The phone's overview (and the Rules widget) pauses all rules for an hour.
+
+**When the PC is off, show page** (same card, off by default) is the one switch the phone makes on its own: the agent
+isn't running then, so no rule can. Once the phone hasn't reached the PC for the set time (30 seconds by default) it
+switches to that page, say one full of Home Assistant Big buttons and **Wake this PC**, and while the PC stays off the
+idle return goes there instead of home. When the PC answers again the phone goes to the home page **once** and leaves
+the rest to your rules: if a rule asks for a page as the PC comes back (music starts playing), the rule wins and the
+trip home is dropped, so the two never take turns.
 
 With **only while it lasts**, the effect ends with the condition: the phone goes back to the page it was on (unless
 you moved on yourself) and stays on the rule's page instead of returning home when idle; a pushed value is removed

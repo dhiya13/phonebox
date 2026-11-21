@@ -58,6 +58,7 @@ class MainActivity : Activity(), SensorEventListener {
     private val camera by lazy { PhoneCamera(this, link) }
     private lateinit var stream: AgentStream
     private lateinit var haDirect: HaDirect
+    private lateinit var wol: WakeOnLan
     private lateinit var pictureCache: ButtonPictureCache
     @Volatile private var resumed = false
     @Volatile private var volumeKeysFlipPages = true
@@ -78,6 +79,7 @@ class MainActivity : Activity(), SensorEventListener {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         link = AgentLink(this)
         haDirect = HaDirect(this)
+        wol = WakeOnLan(this)
         pictureCache = ButtonPictureCache(this)
         stream = AgentStream(link) { event, data ->
             val js = "window.onAgentStream && window.onAgentStream(${JSONObject.quote(event)}, ${JSONObject.quote(data)})"
@@ -199,13 +201,19 @@ class MainActivity : Activity(), SensorEventListener {
             return if (jpeg == null) WebResourceResponse("image/jpeg", null, 204, "No Content", NO_STORE, java.io.ByteArrayInputStream(ByteArray(0)))
             else WebResourceResponse("image/jpeg", null, 200, "OK", NO_STORE, java.io.ByteArrayInputStream(jpeg))
         }
+        // Wake this PC: the computer is off when this is needed, so the phone sends the magic packet itself
+        if (path == "/api/wol/wake" && req.method == "POST") return reply(wol.wake())
         val ha = path.startsWith("/api/ha/")
         // Big button pictures: kept on the phone, so they stay on the buttons while the computer is off
         val picture = if (req.method == "GET" && path == "/api/button-picture") pictureCache.serve(req.url.encodedQuery) { link.tryRequest("GET", it) } else null
         val r = picture ?: (if (ha && link.route == AgentLink.Route.NONE) haDirect.handle(req.method, path, req.url.encodedQuery) else null)
-            ?: link.tryRequest(req.method, path + query)?.also { haDirect.maybeRefresh(link) }
+            ?: link.tryRequest(req.method, path + query)?.also { haDirect.maybeRefresh(link); wol.maybeRefresh(link) }
             ?: (if (ha) haDirect.handle(req.method, path, req.url.encodedQuery) else null)
             ?: AgentLink.Reply(503, "application/json", java.io.ByteArrayInputStream("""{"error":"offline"}""".toByteArray()))
+        return reply(r)
+    }
+
+    private fun reply(r: AgentLink.Reply): WebResourceResponse {
         val ct = r.contentType ?: "application/octet-stream"
         val mime = ct.substringBefore(';').trim()
         val charset = if (ct.contains("charset=")) ct.substringAfter("charset=").trim() else null
@@ -293,6 +301,7 @@ class MainActivity : Activity(), SensorEventListener {
         link.trackpadSocket.close()
         link.close()
         haDirect.close()
+        wol.close()
         (web.parent as? ViewGroup)?.removeView(web) // a WebView must be detached before destroy()
         web.destroy()
         super.onDestroy()

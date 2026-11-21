@@ -545,6 +545,11 @@ app.MapPost("/api/ha/toggle/{id}", async (string id, HomeAssistant ha) =>
 // Home Assistant without this computer: what a paired phone needs to reach Home Assistant itself while the computer is off
 // (only when Settings › General › Home Assistant allows it). The phone stores it and uses it only when the agent is out of reach.
 app.MapGet("/api/ha/direct", (ConfigStore cfg) => Results.Json(HomeAssistant.DirectFor(cfg.Get())));
+// Wake this PC (Big button): the wired adapter's MAC and broadcast address, for the phone to wake this computer with
+// while it is off. The phone sends the packet itself (it intercepts POST /api/wol/wake); a panel that reaches this
+// agent instead is talking to a computer that is on.
+app.MapGet("/api/wol", () => Results.Json(WakeOnLan.Describe()));
+app.MapPost("/api/wol/wake", () => Results.Json(new { ok = true, awake = true }));
 // Settings › General › Ping & network: the connected adapters to pick from (local only, not on the Wi-Fi list)
 app.MapGet("/api/network/adapters", (ConfigStore cfg) => Results.Json(SystemMonitor.Adapters(cfg.Get().Ping.Adapters)));
 

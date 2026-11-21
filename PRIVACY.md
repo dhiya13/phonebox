@@ -19,8 +19,10 @@ Last updated: 2026-11-15 (PhoneBox 0.9.6).
   itself), so a restart doesn't ask Anthropic again sooner than it should.
 - **Log**: `agent.log` in `%LOCALAPPDATA%\PhoneBox` (Windows), `~/.local/share/PhoneBox` (Linux) or
   `~/Library/Application Support/PhoneBox` (macOS).
-- **Phone app**: caches (weather, rates, widget state) in its own app storage. The app asks for `INTERNET` and
-  `VIBRATE`, for the microphone (`RECORD_AUDIO`) only when a Dictation widget's button is tapped for the first time,
+- **Phone app**: caches (weather, rates, widget state) in its own app storage. The app asks for `INTERNET`,
+  `VIBRATE` and `ACCESS_NETWORK_STATE` (granted at install; the Wake this PC button uses it to send its Wake-on-LAN
+  packet on the Wi-Fi network, and keeps the PC's MAC address and network broadcast address in the app's own
+  storage), for the microphone (`RECORD_AUDIO`) only when a Dictation widget's button is tapped for the first time,
   and for the camera (`CAMERA`) only when a Phone webcam widget's camera is switched on for the first time.
 - **Computer data shown on the panel** (CPU, GPU, memory, disks, processes, media, volume, AI coding sessions and
   quotas, Docker / Podman, OBS) is read locally and goes only to your phone: over the USB cable (`adb reverse` to
