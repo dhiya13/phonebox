@@ -660,6 +660,9 @@ nav a.on::before { color: var(--accent); }
           </div>
           <div class="field"><label><span data-i18n="s.night.brightness">Night brightness: </span><span id="nbv"></span></label><input type="range" min="0.01" max="0.3" step="0.01" data-bind="night.brightness" data-type="num"></div>
         </div>
+        <div class="row" style="margin:12px 0 8px"><label class="switch"><input type="checkbox" data-bind="night.idle"><span></span></label> <span data-i18n="s.night.idle">Also when the panel is idle (OLED burn-in protection)</span></div>
+        <p class="hint" style="margin:0 0 8px" data-i18n="s.night.idleHint">The night screen comes on when nobody has touched the panel for a while, no music is playing, no Claude Code prompt is waiting and the phone webcam is off. Tap to wake it; music or a Claude prompt wakes it by itself. Works with the times above switched off.</p>
+        <div class="field" style="max-width:260px"><label data-i18n="s.night.idleMin">Idle for (minutes)</label><input type="number" min="1" max="240" data-bind="night.idleMin" data-type="num"></div>
       </div>
 
       <div class="card">

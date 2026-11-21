@@ -11,8 +11,7 @@ using NAudio.Wave;
 namespace PhoneBox.Agent;
 
 /// <summary>
-/// Live audio spectrum of what the computer is playing, for the "Spectrum bars" and "Audio visualizer" widgets (one
-/// capture feeds both). Windows only (WASAPI loopback
+/// Live audio spectrum of what the computer is playing, for the "Spectrum bars" widget. Windows only (WASAPI loopback
 /// of the default output device). Capture runs only while a panel shows the widget: every <see cref="Want"/> keeps it
 /// going for a few seconds, and only when an enabled page has the widget. The audio never leaves this class; the phone
 /// gets 48 band levels per frame. Elsewhere it stays inactive.
@@ -20,8 +19,6 @@ namespace PhoneBox.Agent;
 public sealed class SpectrumAnalyzer(ConfigStore config, ILogger<SpectrumAnalyzer> log) : IDisposable
 {
     public const string WidgetType = "spectrum";
-    /// <summary>The simpler visualizer widget: same frames, drawn differently on the phone.</summary>
-    public const string VisualizerType = "visualizer";
     /// <summary>Bands per frame; the widget merges them into its own number of bars.</summary>
     public const int Bands = 48;
     /// <summary>Frames per second sent on the live stream.</summary>
@@ -44,7 +41,7 @@ public sealed class SpectrumAnalyzer(ConfigStore config, ILogger<SpectrumAnalyze
     /// <summary>The latest bands, 0–100 each, or null before the first one.</summary>
     public int[]? Frame() => _frame;
 
-    public bool Shown() => config.Get().Widgets(enabledPagesOnly: true).Any(w => w.Type is WidgetType or VisualizerType);
+    public bool Shown() => config.Get().Widgets(enabledPagesOnly: true).Any(w => w.Type == WidgetType);
 
     /// <summary>
     /// A panel shows a visualizer: start capture (if needed) and keep it going for a few seconds. Refused (false) when no

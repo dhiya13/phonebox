@@ -22,15 +22,13 @@ function frame(d) {
 }
 window.addEventListener('phonebox-spectrum', (e) => frame(e.detail));
 
-// Every mounted Spectrum bars and Audio visualizer widget (visualizer.js), with its page. A widget counts as on screen only while it is really visible:
+// Every mounted Spectrum bars widget, with its page. A widget counts as on screen only while it is really visible:
 // not under the night screen, on the current page, and not in a Smart Stack card that is not showing. Mounted is not
 // enough: neighbouring pages and hidden stack cards stay mounted, and asking for them would keep the agent capturing.
 const mountedBars = new Set();
-export const shows = (m) => !document.body.classList.contains('night')
+const shows = (m) => !document.body.classList.contains('night')
   && m.box.isConnected && pages[curPage] === m.page && !m.box.closest('.stack-item:not(.active)');
 const onScreen = () => [...mountedBars].some(shows);
-/** A widget that draws the frames: { box, page }; it keeps the agent capturing while it is on screen. */
-export const watchSpectrum = (m) => mountedBars.add(m);
 
 // Keep the agent capturing while a visualizer is on screen (it stops by itself a few seconds after the last request),
 // and poll the frames when there is no live stream (desktop live preview, or the stream is reconnecting).
@@ -78,6 +76,7 @@ W.spectrum = {
     const stops = style === 'single' ? [[0, color], [1, color]] : PALETTES[style];
     const segmented = o.segments !== false, peaks = o.peaks !== false;
     const fall = FALL[o.falloff] || FALL.normal;
+    const ring = o.shape === 'ring';
 
     const canvas = h('canvas', 'spec-canvas');
     const wrap = h('div', 'spec-wrap', canvas);
@@ -102,9 +101,39 @@ W.spectrum = {
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
 
+    // Ring: the bars stand out from a circle, mirrored left and right, each coloured by its own height
+    const drawRing = () => {
+      const cx = W2 / 2, cy = H2 / 2, R = Math.min(W2, H2) / 2;
+      const r0 = R * 0.42, len = R * 0.52, n = bars * 2;
+      const lw = Math.max(2 * dpr, (2 * Math.PI * r0 / n) * 0.55);
+      g.lineCap = 'round';
+      g.lineWidth = lw;
+      for (let k = 0; k < n; k++) {
+        const i = k < bars ? k : n - 1 - k; // mirrored: low notes at the top, high at the bottom
+        const v = level[i] / 100, a = -Math.PI / 2 + (k + 0.5) * (2 * Math.PI / n);
+        const cos = Math.cos(a), sin = Math.sin(a), l = Math.max(lw * 0.5, v * len);
+        g.globalAlpha = v > 0.01 ? 1 : 0.12;
+        g.strokeStyle = style === 'single' ? color : mix(stops, v);
+        g.beginPath();
+        g.moveTo(cx + cos * r0, cy + sin * r0);
+        g.lineTo(cx + cos * (r0 + l), cy + sin * (r0 + l));
+        g.stroke();
+        if (peaks && peak[i] > 0.5) {
+          const pr = r0 + (peak[i] / 100) * len + lw * 1.2;
+          g.globalAlpha = 1;
+          g.fillStyle = style === 'single' ? color : 'rgba(226,232,240,.9)';
+          g.beginPath();
+          g.arc(cx + cos * pr, cy + sin * pr, lw * 0.45, 0, 2 * Math.PI);
+          g.fill();
+        }
+      }
+      g.globalAlpha = 1;
+    };
+
     const draw = () => {
       g.clearRect(0, 0, W2, H2);
       if (!W2 || !H2) return;
+      if (ring) return drawRing();
       const gap = Math.max(1, Math.round(W2 / bars * 0.18));
       const bw = (W2 - gap * (bars - 1)) / bars;
       const segH = Math.max(2 * dpr, Math.round(H2 / 34)), segGap = Math.max(1, Math.round(segH * 0.35));

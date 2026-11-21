@@ -135,6 +135,13 @@ public sealed class NightConfig
     public string Start { get; set; } = "00:30";
     public string End { get; set; } = "07:30";
     public double Brightness { get; set; } = 0.02;
+    /// <summary>
+    /// OLED burn-in protection: the night screen also comes on when nobody has touched the panel for
+    /// <see cref="IdleMin"/> minutes, no music plays, no Claude Code prompt waits and the phone webcam is off. A tap
+    /// wakes it; music or a prompt wakes it by itself.
+    /// </summary>
+    public bool Idle { get; set; }
+    public int IdleMin { get; set; } = 5;
 }
 
 public sealed class DisplayConfig
@@ -591,6 +598,7 @@ public sealed partial class ConfigStore(string path)
         if (string.IsNullOrWhiteSpace(c.Lan.Token)) c.Lan.Token = NewToken();
         if (string.IsNullOrWhiteSpace(c.Lan.WebhookToken)) c.Lan.WebhookToken = NewToken();
         c.Night.Brightness = Math.Clamp(c.Night.Brightness, 0.01, 1);
+        c.Night.IdleMin = Math.Clamp(c.Night.IdleMin, 1, 240);
 
         c.Pages = NormalizePages(c.Pages, out var originalPageIds);
         // an exact match first; a reference with stray spaces around it still finds the page it names
