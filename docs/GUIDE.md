@@ -155,6 +155,22 @@ failures retain the last measurements with an error.
 Tap an AI session to see its model, timing and token details. Token counters describe the local session rather than
 the account allowance. Prompt/response text and tool arguments are not included in this panel data.
 
+**Phone webcam, started by the PC.** Turn on the widget's **Start when an app on the PC uses the camera** option
+(off by default) and the phone does the tapping for you: when a video app on the PC opens **OBS Virtual Camera**,
+the panel switches to that widget's page (a full-page "Live" page works best) and starts the camera; when the app
+lets go, it stops the camera and goes back to the page it came from. It behaves like a rule that holds its page
+"while active": it waits while you are touching the panel, and other rules can't take the page over during the call.
+Tap the camera off and it stays off until the next call. Until the phone's picture arrives, the app sees a
+"Starting the phone camera…" picture.
+
+What it can see: apps that use OBS Virtual Camera, which are the ones that list DirectShow cameras: Chrome, Edge and
+Firefox (Meet, Teams on the web), Discord, Zoom, Teams, Slack, OBS-aware apps. What it can't: the **Windows Camera
+app** (it only lists Media Foundation cameras, so OBS Virtual Camera isn't there), and apps using another camera.
+Windows' own "camera in use" list (the On air widget) doesn't see OBS Virtual Camera either; the agent watches who
+opens the camera's video queue instead. Windows only, with OBS Studio installed. While the option is on, the agent
+keeps that queue open between calls, so while OBS Studio itself is open it steps aside (OBS's own **Start Virtual
+Camera** would fail otherwise) and nothing starts by itself.
+
 ## Layout editor & settings
 
 Double-click the tray icon on Windows (or open <http://127.0.0.1:8765>):

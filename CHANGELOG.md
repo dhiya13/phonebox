@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.22.10 — 2026-11-21
+
+**Panel**
+- **Phone webcam** can start by itself: with the widget's new **Start when an app on the PC uses the camera** option
+  (off by default), a video app on the PC opening OBS Virtual Camera switches the phone to that widget's page and
+  starts the camera; when the app lets go, the camera stops and the panel goes back to the page it came from. The
+  switch works like a rule holding its page "while active" (it waits while you touch the panel, other rules don't take
+  the page over), and a camera you switch off by hand stays off until the next call.
+
+**Agent**
+- Windows: with that option on, the agent keeps OBS Virtual Camera's video queue open with a "Starting the phone
+  camera…" picture and counts the apps reading it, so it knows when one wants the camera (`webcam` event, and
+  `webcamWanted` in the phone's state). It catches browsers, Discord, Zoom, Teams and other apps that list
+  DirectShow cameras; not the Windows Camera app, which doesn't list OBS Virtual Camera at all. Windows' camera-in-use
+  list (On air) doesn't see OBS Virtual Camera, so it isn't used for this. While OBS Studio is open the agent leaves
+  the queue to it.
+- Video apps now always get the virtual camera at 1280 × 720 while the option is on.
+
 ## 0.9.22.9 — 2026-11-20
 
 **Panel**

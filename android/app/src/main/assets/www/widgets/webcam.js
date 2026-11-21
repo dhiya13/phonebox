@@ -1,4 +1,4 @@
-import { API, PANEL_HEADERS, bridge, curPage, h, haptic, icon, pages, t } from '../main.js';
+import { API, PANEL_HEADERS, bridge, curPage, h, haptic, icon, pages, requestBack, requestPage, t } from '../main.js';
 import { W } from '../registry.js';
 
 // ---------------------------------------------------------------- phone webcam
@@ -8,6 +8,52 @@ import { W } from '../registry.js';
 // hands them to video apps as OBS Virtual Camera. Nothing runs until the button is tapped; the app switches the camera
 // off when the panel pauses (screen off, another app in front) or reloads. One camera at a time: the bridge's state
 // names the widget it runs for, so another webcam widget shows "off".
+
+// Auto-start (the widget's "Start when an app on the PC uses the camera" option): when a video app on the PC opens OBS
+// Virtual Camera, the agent says so (a "webcam" event, and webcamWanted in its state). The panel then starts the camera
+// for the first such widget on its pages and asks for that page like a rule that holds it "while active" (so other
+// rules and the touch grace work as usual); when the app lets go, it stops the camera it started and goes back.
+const AUTO_RULE = 'webcam';
+let autoKey = '';        // the widget the auto-start switched the camera on for ('' = none)
+let autoDeclined = false; // switched off by hand during this request: not started again until the next one
+let autoWanted = false;
+
+const readState = () => { try { return JSON.parse(bridge.webcamState() || '{}'); } catch (_) { return {}; } };
+const camOn = (s, key) => (!key || s.widget === key) && (s.state === 'starting' || s.state === 'live');
+
+function autoWidget() {
+  for (const page of pages) {
+    const w = (page.widgets || []).find((x) => x.type === 'webcam' && x.options?.auto === true && x.options?.pc !== false);
+    if (w) return { page, w, key: `${page.id}/${w.id}` };
+  }
+  return null;
+}
+
+/** The agent's word on whether an app on the PC reads the camera: from its events and, to catch up, its state. */
+export function autoWebcam(wanted) {
+  if (!(bridge && bridge.webcamStart && bridge.webcamState)) return;
+  wanted = !!wanted;
+  const was = autoWanted;
+  autoWanted = wanted;
+  if (!wanted) {
+    if (!was) return;
+    requestBack(AUTO_RULE);
+    if (autoKey && camOn(readState(), autoKey)) bridge.webcamStop();
+    autoKey = '';
+    autoDeclined = false;
+    return;
+  }
+  const found = autoWidget();
+  if (!found) return;
+  if (!was) requestPage({ page: found.page.id, rule: AUTO_RULE, hold: true, name: t('w.webcam.auto'), priority: 100, countdown: 0 });
+  if (autoDeclined) return;
+  const s = readState();
+  if (camOn(s)) return; // already on (tapped, or still running for this request)
+  if (bridge.canWebcam && !bridge.canWebcam()) return;
+  const o = found.w.options || {};
+  bridge.webcamStart(found.key, o.facing === 'back' ? 'back' : 'front', o.quality === 'sd' ? 'sd' : 'hd', true);
+  autoKey = found.key;
+}
 
 const PC_NOTES = {
   obs: 'w.webcam.live', stream: 'w.webcam.stream', missing: 'w.webcam.missing', busy: 'w.webcam.busy',
@@ -40,7 +86,7 @@ W.webcam = {
     let alive = true, facing = o.facing === 'back' ? 'back' : 'front';
     let seq = -1, fetching = false, url = '', timer = 0, last = null;
     const visible = () => !document.body.classList.contains('night') && pages[curPage] === page && !box.closest('.stack-item:not(.active)');
-    const read = () => { try { return JSON.parse(bridge.webcamState() || '{}'); } catch (_) { return {}; } };
+    const read = readState;
     const mine = (s) => s.widget === key && (s.state === 'starting' || s.state === 'live' || s.state === 'error');
     const running = (s) => s.widget === key && (s.state === 'starting' || s.state === 'live');
 
@@ -109,7 +155,11 @@ W.webcam = {
     power.onclick = () => {
       haptic();
       if (!can) return;
-      if (running(read())) { bridge.webcamStop(); show({}); poll(); return; }
+      if (running(read())) {
+        bridge.webcamStop();
+        if (autoWanted) autoDeclined = true; // switched off by hand while the PC wants it: stays off for this call
+        show({}); poll(); return;
+      }
       if (bridge.canWebcam && !bridge.canWebcam()) { show({ widget: key, state: 'error', error: 'unavailable' }); return; }
       start();
     };
