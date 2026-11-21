@@ -18,7 +18,6 @@ import { autoWebcam } from './widgets/webcam.js';
 import './widgets/claude.js';
 import './widgets/camera.js';
 import './widgets/spectrum.js';
-import './widgets/visualizer.js';
 
 // PhoneBox desk panel. Pages are 12 × 6 grids of widgets, designed in the agent's settings page.
 // The panel talks to the PhoneBox agent through "/agent/*", which the Android shell proxies over USB
@@ -1239,7 +1238,7 @@ export function handleEvent(e) {
   else if (e.kind === 'reload') location.reload();
 }
 
-export const WIDGET_ICONS = { camera: '📹', webcam: '📷', dictate: '🎙️', spectrum: '📶', visualizer: '〰️', 'app-console': '🎛️',discord: '💬', rules: '⚡', chargecare: '🔋', nextup: '⏭️', moon: '🌙', wordclock: '🔤', clock: '🕒', weather: '⛅', forecast: '🌦️', media: '🎵', stat: '📈', gauge: '⏲️', chart: '📊', meters: '💾', gpu: '🎮', quotas: '✳️', sessions: '🤖',
+export const WIDGET_ICONS = { camera: '📹', webcam: '📷', dictate: '🎙️', spectrum: '📶', 'app-console': '🎛️',discord: '💬', rules: '⚡', chargecare: '🔋', nextup: '⏭️', moon: '🌙', wordclock: '🔤', clock: '🕒', weather: '⛅', forecast: '🌦️', media: '🎵', stat: '📈', gauge: '⏲️', chart: '📊', meters: '💾', gpu: '🎮', quotas: '✳️', sessions: '🤖',
   github: '🐙', processes: '⚙️', shortcuts: '🎛️', button: '🔘', worldclock: '🌍', calendar: '📅', pomodoro: '🍅', countdown: '⏳', note: '📝', command: '💻',
   push: '📡', inbox: '📬', label: '🔤', analog: '🕰️', progress: '📆', stopwatch: '⏱️', timer: '⏲️', counter: '🔢', breathe: '🫁', quote: '💬',
   checklist: '✅', battery: '🔋', topprocs: '🔥', quotaring: '🎯', volume: '🔊', sun: '🌅', air: '🍃', hackernews: '📰', feeds: '🗞️', photos: '🖼️', exchange: '💱', crypto: '🪙', image: '🖼️', pcswitch: '🖥️' };
@@ -1914,6 +1913,28 @@ window.addEventListener('resize', () => { buildLayout(); goPage(curPage, true); 
 
 // ---------------------------------------------------------------- clock tick & night mode
 export function parseHM(s) { const [hh, mm] = (s || '0:0').split(':').map(Number); return hh * 60 + (mm || 0); }
+/**
+ * OLED burn-in protection (Settings › General › Night mode › "Also when the panel is idle"): the night screen when
+ * nobody has touched the panel for idleMin minutes, no music plays, no Claude Code prompt or waiting session needs
+ * you and the phone webcam is off. Any of those, or a tap, ends it.
+ */
+const bootAt = Date.now();
+export function idleNightDue({ night, quietMs, playing, prompt, waiting, webcam }) {
+  if (night?.idle !== true) return false;
+  if (quietMs < Math.max(1, +night.idleMin || 5) * 60_000) return false;
+  return !playing && !prompt && !waiting && !webcam;
+}
+export function idleNight() {
+  return idleNightDue({
+    night: cfg.night,
+    quietMs: Date.now() - Math.max(lastUserTouch, bootAt),
+    playing: !!media?.playing,
+    prompt: !!(approvals.length || approvalShown),
+    waiting: (D.work?.sessions || []).some((s) => s.status === 'waiting'),
+    webcam: !!D.state?.webcamWanted,
+  });
+}
+
 export function isNight(now) {
   const n = cfg.night || {};
   if (!n.enabled) return false;
@@ -2032,7 +2053,7 @@ export function tick() {
   $('nDate').textContent = now.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
   if (darkSince && Date.now() - darkSince > 30_000) darkRoom = true;
   const dark = darkRoom && cfg.display?.nightWhenDark === true;
-  setNight((isNight(now) || dark) && Date.now() > wakeUntil);
+  setNight((isNight(now) || dark || idleNight()) && Date.now() > wakeUntil);
   if (!PREVIEW && idleDue() && !navQueue.some((r) => r.kind === 'home')) {
     if (curPage === homeIndex()) { closeSheet(); closeOverview(); lastNav = Date.now(); } // only a sheet to close
     else { navQueue.push({ kind: 'home', at: Date.now(), priority: -1 }); pump(); }

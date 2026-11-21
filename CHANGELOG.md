@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.22.12 — 2026-11-21
+
+**Panel**
+- Night mode can also come on when the panel is idle (OLED burn-in protection): Settings › General › Night mode ›
+  **Also when the panel is idle**, after a set number of minutes without a touch, while no music plays, no Claude Code
+  prompt waits and the phone webcam is off. A tap wakes it; music or a Claude prompt wakes it by itself. Off by default.
+- Spectrum bars: a new **Shape** option draws them as a **Ring**, with the same colours, peaks and fall speed.
+- Removed the Audio visualizer widget (0.9.22.7): it duplicated Spectrum bars. Its ring style now lives in Spectrum bars.
+
 ## 0.9.22.11 — 2026-11-21
 
 **Panel**
