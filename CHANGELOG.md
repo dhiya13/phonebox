@@ -1,18 +1,6 @@
 # Changelog
 
-## 0.9.22.6 — 2026-11-20
-
-**Panel**
-- Big button: a switch that is on now just lights up, without the green dot in the corner. Shortcut grid keys keep it.
-
-## 0.9.22.5 — 2026-11-20
-
-**Agent**
-- Windows: music that keeps playing after a video started over it stops is still shown as playing. Before, the agent
-  followed only Windows' "current" media session, which stays on the stopped video, so a "media playing" rule ended
-  and the panel went back to its home page while the music played on. A playing session now wins over a current one
-  that is not playing (the one already on screen first), and play / pause / next act on the session the panel shows.
-## 0.9.22.2 — 2026-11-20
+## 0.9.22.9 — 2026-11-20
 
 **Panel**
 - New **Phone webcam** widget: the phone's camera as a webcam on the PC. Tap the camera button to switch it on, see the
@@ -36,6 +24,38 @@
   pictures instead of falling behind. The camera stops when the panel goes to the background, the screen turns off or
   the panel reloads.
 
+## 0.9.22.8 — 2026-11-20
+
+**Panel**
+- **Claude actions** widget: the Claude Code sessions that need you, each named, with big buttons. **Approve / Deny**
+  answer a permission prompt through the same approval as the full-screen card (which the widget replaces while it is
+  on screen). **Continue / Retry / Done** answer a session that finished a turn while you were away from the PC: the
+  hook now also installs a Claude Code `Stop` hook that keeps that one session waiting for the phone (10 minutes by
+  default, Settings › General › Claude Code permission prompts) and hands it the answer, so nothing is ever typed into
+  a window. The wait ends as soon as you touch the PC. Off until the widget's **Allow answering from the phone** is on;
+  the agent checks that option for every answer. A hook installed earlier shows **Update hook** in Settings.
+
+## 0.9.22.7 — 2026-11-20
+
+**Panel**
+- **Audio visualizer** (Windows): a calm, minimal visualizer of the sound the PC is playing, next to the Spectrum bars.
+  Three styles (smooth bars, a mirrored wave, a ring), the panel's accent colour or one of its own, a sensitivity
+  setting and the number of bars. It eases smoothly between frames and rests on a faint line when nothing plays, then
+  stops drawing. It uses the same capture as Spectrum bars: one capture feeds both, and it runs only while one of them
+  is on screen on an enabled page.
+
+## 0.9.22.6 — 2026-11-20
+
+**Panel**
+- Big button: a switch that is on now just lights up, without the green dot in the corner. Shortcut grid keys keep it.
+
+## 0.9.22.5 — 2026-11-20
+
+**Agent**
+- Windows: music that keeps playing after a video started over it stops is still shown as playing. Before, the agent
+  followed only Windows' "current" media session, which stays on the stopped video, so a "media playing" rule ended
+  and the panel went back to its home page while the music played on. A playing session now wins over a current one
+  that is not playing (the one already on screen first), and play / pause / next act on the session the panel shows.
 ## 0.9.22.1 — 2026-11-20
 
 First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream

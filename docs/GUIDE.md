@@ -75,8 +75,8 @@ keeps the screen on.
 |---|---|
 | **Time** | Clock (with status line and weather) · Analog clock (any time zone) · **Word clock** · World clocks · Calendar · **Next up** · Time progress (day / week / month / year) · Countdown · Pomodoro · Quick timer · Stopwatch |
 | **Weather & sky** | Weather · Forecast (hourly / 7 days) · Sun & moon (daylight left, UV, moon phase) · **Moon** · Air quality (European AQI, PM2.5, PM10, O₃, NO₂) |
-| **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **Phone webcam** (the phone's camera as a webcam on the PC: Windows video apps pick it as "OBS Virtual Camera" when OBS Studio is installed, and every system gets an MJPEG stream at `http://127.0.0.1:8765/api/webcam/mjpeg`; tap to switch it on, the app asks for the camera on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · Shortcut grid · **Big button** (its own picture, label and colour; runs a shortcut or switches a Home Assistant entity, see below) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) · **Trackpad** (control PC cursor, tap to click, hold to drag, scroll) |
-| **AI & code** | AI quotas · Quota ring · AI sessions (Claude Code, Codex, Cursor) · GitHub |
+| **Computer** | **Rules** (which hold, pause) · **Battery care** · On air (microphone / camera / OBS) · OBS Studio (live, recording, scenes) · **Dictation** (speak on the phone, typed on the PC; the app asks for the microphone on first use) · **App console** (Windows: keys and a dial for the app in front, set per app in Settings › General; use the focused app's process name from Task Manager's Details tab; packaged Store apps can all show up as `ApplicationFrameHost` and terminal tabs as `WindowsTerminal`, so a profile for those names covers all of them) · Device batteries (headphones, mice, keyboards) · Docker / Podman (containers, start / stop) · Metric tile · Gauge · Chart · GPU details · Memory & disks · Top processes · Processes · Now playing · Radio · Volume · **Spectrum bars** (Windows: a live spectrum of what the PC is playing, like the classic LED bar visualizers) · **Audio visualizer** (Windows: the same sound as smooth bars, a mirrored wave or a ring, in the accent colour) · Shortcut grid · **Big button** (its own picture, label and colour; runs a shortcut or switches a Home Assistant entity, see below) · **Command** (PowerShell / bash / zsh output, refreshed every N seconds) · **Trackpad** (control PC cursor, tap to click, hold to drag, scroll) · **Phone webcam** (the phone's camera as a webcam on the PC: Windows video apps pick it as "OBS Virtual Camera" when OBS Studio is installed, and every system gets an MJPEG stream at `http://127.0.0.1:8765/api/webcam/mjpeg`; tap to switch it on, the app asks for the camera on first use) |
+| **AI & code** | AI quotas · Quota ring · AI sessions (Claude Code, Codex, Cursor) · **Claude actions** (Approve / Deny / Continue / Retry for Claude Code sessions, see [below](#claude-actions-widget)) · GitHub |
 | **Personal** | **Agenda** (Google / Outlook / iCloud calendars) · Note (edit it from the phone) · Checklist (resets daily) · Counter · Breathe · Quote · Title · Phone battery · **Computers** (switch between paired computers) · **Photo frame** (a slideshow from a photo folder on the PC) |
 | **Web & data** | **Custom HTML** (your own widget, sandboxed) · **Home Assistant** (entities with their own name and icon, tap to switch) · **Pushed value** · **Notifications** (both fed by [webhooks](#webhooks)) · **News feeds** (your RSS and Atom feeds; with its "Open articles on the PC" option, a tap opens the article on the PC) · Hacker News · Exchange rates (ECB) · Crypto prices · Image / webcam · **Camera** (a live picture from an IP camera over RTSP, pulled by ffmpeg on the PC) |
 
@@ -201,6 +201,31 @@ WorkBuddy speaks the same hook protocol. Add the same `PermissionRequest` entry 
 hand: *Install hook* writes to `~/.claude/settings.json` only. WorkBuddy keeps its sessions in `~/.workbuddy`, so the
 card takes the project name from the workspace name WorkBuddy stores
 (`~/.workbuddy/workspace-display-names.json`) instead of the folder name.
+
+### Claude actions widget
+
+The **Claude actions** widget lists the Claude Code sessions that need you, each by its chat title (with titles on)
+or its folder, with big buttons:
+
+- **Approve / Deny** answer a permission prompt. It is the same prompt the full-screen card shows, answered the same
+  way, so it needs the hook and **Ask on the phone** above. While the widget is on the page you are looking at and
+  allowed to answer, it shows the prompt in place of the card.
+- **Continue / Retry / Done** are for a session that finished a turn while you were away from the PC. *Install hook*
+  also adds a `Stop` hook. When a session finishes and nobody has touched the PC's keyboard or mouse for a minute, the
+  hook keeps that one session waiting for the phone, for up to the minutes set in **Settings › General › Claude Code
+  permission prompts** (10 by default). **Continue** tells it to carry on with the task, **Retry** to try the last
+  step that failed again, and **Done** lets it stop. The answer goes back through that session's own hook call, so it
+  can only reach that session: nothing is typed into any window. The wait ends with nothing, and Claude Code stops as
+  usual, as soon as you touch the PC, the phone goes away, the widget no longer allows it or the time runs out. A
+  hook installed before 0.9.22.8 has no `Stop` entry: the settings page then offers **Update hook**.
+- Sessions waiting for something the phone can't answer (a question, or a prompt the hook doesn't see) are listed
+  without buttons, so you know to go to the PC.
+
+Nothing is answered until you turn on the widget's own **Allow answering from the phone** option, which is off by
+default. The agent checks it for every answer: a widget on a page that is off, or not shown on that phone, or a removed
+widget, allows nothing. Limits: a session that stopped before you left the PC isn't held, and a turn that ends on an
+API error doesn't run Claude Code's `Stop` hook, so Retry there means "retry the failed step", not "resend after an API
+error". On Linux under Wayland the agent can't tell whether you are at the PC, so sessions are never held there.
 
 ## Webhooks
 

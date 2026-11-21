@@ -229,6 +229,12 @@ public sealed class ClaudeConfig
     /// <summary>Show each Claude Code chat's title on the phone. The title is the name you gave the chat or the one
     /// Claude Code wrote, which it often draws from your first prompt, so it stays off until you turn it on.</summary>
     public bool ShareSessionTitles { get; set; }
+    /// <summary>How long a Claude Code session that finished while you were away waits for Continue / Retry from the
+    /// Claude actions widget (the Stop hook) before it stops as usual.</summary>
+    public int HoldMinutes { get; set; } = DefaultHoldMinutes;
+
+    public const int DefaultHoldMinutes = 10;
+    public static int ClampHold(int minutes) => Math.Clamp(minutes, 1, 60);
 }
 
 public sealed class CursorConfig

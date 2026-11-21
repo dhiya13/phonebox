@@ -756,6 +756,7 @@ nav a.on::before { color: var(--accent); }
         <label class="check"><input type="checkbox" data-bind="claude.onlyWhenAway"> <span data-i18n="s.claude.onlyWhenAway">Only when I am away from the PC (no keyboard or mouse for a minute)</span></label>
         <label class="check"><input type="checkbox" data-bind="claude.shareConversation"> <span data-i18n="s.claude.shareConversation">Show the conversation on the phone (tap a Claude Code session to see its recent messages and steps; these are your prompts and Claude's replies, sent only to your phone)</span></label>
         <div class="field" style="max-width:260px;margin-top:12px"><label data-i18n="s.claude.timeout">Seconds to answer before the terminal takes over</label><input type="number" min="10" max="3600" data-bind="claude.timeoutSec" data-type="int"></div>
+        <div class="field" style="max-width:420px;margin-top:12px"><label data-i18n="s.claude.holdMinutes">Minutes a session that finished while you were away waits for Continue / Retry (Claude actions widget)</label><input type="number" min="1" max="60" data-bind="claude.holdMinutes" data-type="int"></div>
       </div>
 
       <div class="card">
@@ -3249,10 +3250,13 @@ async function loadInfo() {
     renderUpdate(await (await fetch('/api/update')).json());
     renderWebhooks(lan);
     const hk = await (await fetch('/api/claude/hook')).json();
-    $('hookState').textContent = hk.installed ? t('s.claude.installedIn', { path: hk.path }) : t('s.claude.notInstalled');
-    $('hookBtn').dataset.i18n = hk.installed ? 's.claude.removeHook' : 's.claude.installHook';
+    // a hook installed before 0.9.22.8 has no Stop entry (Continue / Retry): installing again adds it
+    const stale = hk.installed && !hk.stop;
+    $('hookState').textContent = stale ? t('s.claude.stopMissing', { path: hk.path })
+      : hk.installed ? t('s.claude.installedIn', { path: hk.path }) : t('s.claude.notInstalled');
+    $('hookBtn').dataset.i18n = stale ? 's.claude.updateHook' : hk.installed ? 's.claude.removeHook' : 's.claude.installHook';
     $('hookBtn').textContent = t($('hookBtn').dataset.i18n);
-    $('hookBtn').dataset.installed = hk.installed ? '1' : '';
+    $('hookBtn').dataset.installed = hk.installed && !stale ? '1' : '';
     $('info').replaceChildren(
       h('dt', {}, 'Version'), h('dd', {}, i.version),
       h('dt', {}, t('s.adv.settingsFile')), h('dd', {}, h('code', {}, i.configPath)),

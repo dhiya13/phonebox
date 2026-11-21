@@ -144,6 +144,10 @@
   // the phone reports its battery through /api/phone/battery; /api/charge serves the last report
   let phoneBattery = { level: 72, plugged: true, temp: 29, at: now() - 20e3, source: 'usb', usb: 'configured' };
   let approvals = [];
+  // a Claude Code session that finished while you were away and waits for Continue / Retry (the Stop hook, ClaudeActions)
+  let held = [{ id: 'held1', session: '5', project: 'blog-engine', title: null, createdAt: now() - 60e3, expiresAt: now() + 9 * 60e3 }];
+  const claudeWidgetAllows = async (key) => panelWidget(await config(), key, 'claude-actions')?.options?.control === true;
+  const CLAUDE_OFF = 'answering is off: turn on "Allow answering from the phone" in the Claude actions widget\'s settings';
   const SAMPLE_PROMPTS = [
     { tool: 'Run a command', detail: 'git push origin main --force-with-lease', description: 'Push the rebased branch', project: 'api-gateway' },
     { tool: 'Edit a file', detail: 'src/routes/billing.ts\n\n  export const limit = rateLimit({ windowMs: 60_000, max: 120 })', description: '', project: 'docs-site' },
@@ -303,6 +307,7 @@
           pr('acme/infra', 77, 'Move staging to a new region', null, null, false, 'hubot')],
         myPrs: [pr('acme/api', 409, 'Cache user sessions in Redis', 'SUCCESS', 'APPROVED'), pr('acme/web', 1281, 'Faster image uploads', 'PENDING'),
           pr('acme/cli', 53, 'New "deploy" command', 'FAILURE', 'CHANGES_REQUESTED'), pr('acme/docs', 210, 'Getting started rewrite', null, null, true)] },
+      held: held.filter((x) => x.expiresAt > n),
     };
   }
 
@@ -606,7 +611,7 @@
     }
     // spectrum bars: like the agent, frames only for a widget on an enabled page; a made-up beat with a bass kick here
     if (path === '/api/spectrum') {
-      const shown = shownWidgets(await config()).some((w) => w.type === 'spectrum');
+      const shown = shownWidgets(await config()).some((w) => w.type === 'spectrum' || w.type === 'visualizer');
       const s = Date.now() / 1000, kick = Math.max(0, Math.cos(s * Math.PI * 2 * 2)) ** 6;
       const b = shown ? Array.from({ length: 48 }, (_, i) => Math.round(Math.max(0, Math.min(100,
         78 - i * 0.7 + (i < 8 ? kick * 22 : 0) + 14 * Math.sin(s * (2.1 + i * 0.37) + i) + 6 * Math.sin(s * 9.7 + i * 1.3))))) : null;
@@ -675,7 +680,16 @@
     if (path === '/api/procs/detail') return json(procDetail(q.get('name')));
     if (path.startsWith('/api/widget/')) return json({ output: String(3 + Math.floor(Math.random() * 3)), at: now() - 8000, ok: true, running: false, durationMs: 412 });
     if (path === '/api/approvals' && method === 'GET') return json({ items: approvals.filter((a) => a.expiresAt > now()) });
+    if (path.startsWith('/api/claude/held/') && method === 'POST') {
+      if (!(await claudeWidgetAllows(q.get('widget')))) return json({ error: CLAUDE_OFF }, 403);
+      if (!['continue', 'retry', 'done'].includes(q.get('action'))) return json({ error: 'unknown action' }, 400);
+      const id = decodeURIComponent(path.slice(17));
+      if (!held.some((x) => x.id === id && x.expiresAt > now())) return json({ error: 'this session is no longer waiting' }, 404);
+      held = held.filter((x) => x.id !== id);
+      return json({ ok: true });
+    }
     if (path.startsWith('/api/approvals/') && method === 'POST') {
+      if (q.has('widget') && !(await claudeWidgetAllows(q.get('widget')))) return json({ error: CLAUDE_OFF }, 403);
       const id = decodeURIComponent(path.slice(15));
       if (!approvals.some((a) => a.id === id)) return json({}, 404);
       approvals = approvals.filter((a) => a.id !== id);

@@ -15,8 +15,10 @@ import './widgets/controls.js';
 import './widgets/console.js';
 import './widgets/dictate.js';
 import './widgets/webcam.js';
+import './widgets/claude.js';
 import './widgets/camera.js';
 import './widgets/spectrum.js';
+import './widgets/visualizer.js';
 
 // PhoneBox desk panel. Pages are 12 × 6 grids of widgets, designed in the agent's settings page.
 // The panel talks to the PhoneBox agent through "/agent/*", which the Android shell proxies over USB
@@ -1106,6 +1108,19 @@ const answeredCap = 50;
 // put a different prompt on screen while this one is still posting, and neither may unlock the other's buttons.
 const submitting = new Set();
 
+// A Claude actions widget on screen that may answer stands in for the full-screen card (each entry says whether it does
+// right now), so the prompt it shows is not hidden behind the card.
+export const approvalWidgets = new Set();
+const approvalCovered = () => [...approvalWidgets].some((covers) => covers());
+
+/** A prompt the Claude actions widget answered: dropped here as if the card had answered it. */
+export function answeredHere(id) {
+  answered.add(id);
+  if (answered.size > answeredCap) answered.delete(answered.values().next().value);
+  approvals = approvals.filter((x) => x.id !== id);
+  renderApproval();
+}
+
 function stillOpen(items) {
   return items.filter((x) => !answered.has(x.id));
 }
@@ -1131,6 +1146,7 @@ export async function loadApprovals() {
 }
 
 export function renderApproval() {
+  emit('approvals');
   const a = approvals[0];
   const box = $('approval');
   if (!a) { box.hidden = true; approvalShown = null; return; }
@@ -1143,6 +1159,7 @@ export function renderApproval() {
     // A prompt whose answer is still in flight comes back locked: it can be shown again while its own post runs.
     $('apAllow').disabled = $('apDeny').disabled = $('apSkip').disabled = submitting.has(a.id);
   }
+  if (approvalCovered()) { box.hidden = true; return; }
   // A question from Claude is answered at the PC (the terminal shows it); the phone only tells you it is waiting.
   const asking = a.kind === 'question';
   $('apAllow').hidden = $('apDeny').hidden = asking;
@@ -1160,6 +1177,8 @@ export function renderApproval() {
 
 export function tickApproval() {
   const a = approvals[0];
+  // the page changed: the card comes back when no Claude actions widget shows the prompt any more, and goes when one does
+  if (a && $('approval').hidden !== approvalCovered()) { renderApproval(); return; }
   if (!a || $('approval').hidden) return;
   const left = a.expiresAt - Date.now();
   $('apTime').textContent = a.kind === 'question' ? t('panel.answerInTerminal')
@@ -1211,6 +1230,7 @@ $('apSkip').addEventListener('click', () => decide('skip'));
 export function handleEvent(e) {
   if (PREVIEW && (e.kind === 'goto' || e.kind === 'back' || e.kind === 'reload')) return; // the editor picks the page
   if (e.kind === 'approval' || e.kind === 'approval-done') loadApprovals();
+  else if (e.kind === 'claude-held' || e.kind === 'claude-held-done') loadWork();
   else if (e.kind === 'notify' && e.data) handleNotify(e.data);
   else if (e.kind === 'goto' && e.data) requestPage(e.data);
   else if (e.kind === 'back' && e.data) requestBack(e.data.rule);
@@ -1218,7 +1238,7 @@ export function handleEvent(e) {
   else if (e.kind === 'reload') location.reload();
 }
 
-export const WIDGET_ICONS = { camera: '📹', webcam: '📷', dictate: '🎙️', spectrum: '📶', 'app-console': '🎛️',discord: '💬', rules: '⚡', chargecare: '🔋', nextup: '⏭️', moon: '🌙', wordclock: '🔤', clock: '🕒', weather: '⛅', forecast: '🌦️', media: '🎵', stat: '📈', gauge: '⏲️', chart: '📊', meters: '💾', gpu: '🎮', quotas: '✳️', sessions: '🤖',
+export const WIDGET_ICONS = { camera: '📹', webcam: '📷', dictate: '🎙️', spectrum: '📶', visualizer: '〰️', 'app-console': '🎛️',discord: '💬', rules: '⚡', chargecare: '🔋', nextup: '⏭️', moon: '🌙', wordclock: '🔤', clock: '🕒', weather: '⛅', forecast: '🌦️', media: '🎵', stat: '📈', gauge: '⏲️', chart: '📊', meters: '💾', gpu: '🎮', quotas: '✳️', sessions: '🤖',
   github: '🐙', processes: '⚙️', shortcuts: '🎛️', button: '🔘', worldclock: '🌍', calendar: '📅', pomodoro: '🍅', countdown: '⏳', note: '📝', command: '💻',
   push: '📡', inbox: '📬', label: '🔤', analog: '🕰️', progress: '📆', stopwatch: '⏱️', timer: '⏲️', counter: '🔢', breathe: '🫁', quote: '💬',
   checklist: '✅', battery: '🔋', topprocs: '🔥', quotaring: '🎯', volume: '🔊', sun: '🌅', air: '🍃', hackernews: '📰', feeds: '🗞️', photos: '🖼️', exchange: '💱', crypto: '🪙', image: '🖼️', pcswitch: '🖥️' };
