@@ -55,6 +55,7 @@ class MainActivity : Activity(), SensorEventListener {
     private var destroyed = false
     private val dictation by lazy { Dictation(this) { script -> if (!destroyed) web.evaluateJavascript(script, null) } }
     private lateinit var link: AgentLink
+    private val camera by lazy { PhoneCamera(this, link) }
     private lateinit var stream: AgentStream
     private lateinit var haDirect: HaDirect
     private lateinit var pictureCache: ButtonPictureCache
@@ -116,7 +117,10 @@ class MainActivity : Activity(), SensorEventListener {
 
             // Old WebView without document-start scripts: hand the bridge key to the main frame only (evaluateJavascript
             // never runs in iframes), and only when it shows the panel. Bridge calls before it arrives get nothing.
-            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) = giveKey(view, url)
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                camera.pause() // a reloaded panel has no widget that switched the camera on
+                giveKey(view, url)
+            }
             override fun onPageFinished(view: WebView, url: String?) = giveKey(view, url)
         }
         if (documentStartKey)
@@ -189,6 +193,12 @@ class MainActivity : Activity(), SensorEventListener {
         // asks Home Assistant itself, if the computer allowed that (HaDirect). Once the last try found no route, Home
         // Assistant requests skip the agent: timing out on every paired address first would outlast the widget's
         // deadline. The panel's own polling keeps trying the agent and switches back as soon as it answers.
+        // Phone webcam widget: its preview is the camera picture kept on the phone, never fetched from the computer
+        if (path == "/api/webcam/preview") {
+            val jpeg = if (req.method == "GET") camera.preview() else null
+            return if (jpeg == null) WebResourceResponse("image/jpeg", null, 204, "No Content", NO_STORE, java.io.ByteArrayInputStream(ByteArray(0)))
+            else WebResourceResponse("image/jpeg", null, 200, "OK", NO_STORE, java.io.ByteArrayInputStream(jpeg))
+        }
         val ha = path.startsWith("/api/ha/")
         // Big button pictures: kept on the phone, so they stay on the buttons while the computer is off
         val picture = if (req.method == "GET" && path == "/api/button-picture") pictureCache.serve(req.url.encodedQuery) { link.tryRequest("GET", it) } else null
@@ -257,11 +267,14 @@ class MainActivity : Activity(), SensorEventListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == Dictation.PERMISSION_REQUEST)
             dictation.onPermission(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+        if (requestCode == PhoneCamera.PERMISSION_REQUEST)
+            camera.onPermission(grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED)
     }
 
     override fun onPause() {
         resumed = false
         dictation.cancel(0) // the microphone is never left open behind another app or a dark screen
+        camera.pause() // nor the camera (Android takes it from a background app anyway)
         sensors?.unregisterListener(this)
         stream.stop()
         // WebView.onPause() leaves JavaScript running: tell the panel to stop polling and refreshing while nobody sees it
@@ -274,6 +287,7 @@ class MainActivity : Activity(), SensorEventListener {
         destroyed = true
         resumed = false
         dictation.cancel(0)
+        camera.close()
         sensors?.unregisterListener(this)
         stream.stop()
         link.trackpadSocket.close()
@@ -499,6 +513,25 @@ class MainActivity : Activity(), SensorEventListener {
 
         @JavascriptInterface
         fun cancelListening(key: String, id: Int) { if (ok(key) && id > 0) dictation.cancel(id) }
+
+        /** Phone webcam widget: true when the phone has a camera. */
+        @JavascriptInterface
+        fun canWebcam(key: String): Boolean = ok(key) && camera.available()
+
+        /**
+         * Phone webcam widget: switches the camera on for [widget] ("pageId/widgetId"); [facing] "front" or "back",
+         * [quality] "hd" or "sd", [send] whether the pictures go to the computer. Its state: webcamState().
+         */
+        @JavascriptInterface
+        fun webcamStart(key: String, widget: String, facing: String, quality: String, send: Boolean) {
+            if (ok(key)) camera.start(widget.take(200), facing, quality, send)
+        }
+
+        @JavascriptInterface
+        fun webcamStop(key: String) { if (ok(key)) camera.stop() }
+
+        @JavascriptInterface
+        fun webcamState(key: String): String = if (ok(key)) camera.stateJson() else "{}"
     }
 
     companion object {

@@ -761,6 +761,22 @@ html.beat-3 .sess.busy .st, html.beat-4 .sess.shell .st, html.beat-2 .sess.waiti
 .cam-note { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; }
 .cam-note[hidden] { display: none; }
 .cam-cap { position: absolute; left: 8px; bottom: 6px; padding: 2px 8px; border-radius: 6px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 12px; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w.wc { padding: 0; overflow: hidden; background: #000; }
+.wc-img { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: 100%; height: 100%; object-fit: contain; visibility: hidden; }
+.wc-img.on { visibility: visible; }
+.wc-img.mirror { transform: scaleX(-1); } /* the front camera's preview like a mirror; the computer gets it unmirrored */
+.wc-note { position: absolute; top: 0; right: 0; bottom: 44px; left: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; color: var(--muted); }
+.wc-note[hidden] { display: none; }
+.wc-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; display: flex; align-items: center; gap: 6px; }
+.wc-cap { flex: 1; min-width: 0; padding: 3px 8px; border-radius: 6px; background: rgba(0, 0, 0, .55); color: #fff; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wc-cap[hidden] { visibility: hidden; display: block; }
+.wc-btn { flex: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .18); background: rgba(0, 0, 0, .5); color: #fff; padding: 0; }
+.wc-btn .ico { width: 20px; height: 20px; }
+.wc-btn.on { background: rgba(239, 68, 68, .85); border-color: rgba(239, 68, 68, 1); }
+.wc-btn:disabled { opacity: .4; }
+.wc-btn:active { transform: scale(.94); }
+.wc-live { position: absolute; top: 6px; left: 6px; padding: 2px 8px; border-radius: 6px; background: #ef4444; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+.wc-live[hidden] { display: none; }
 .pf-note { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; }
 .html-frame { width: 100%; height: 100%; border: 0; display: block; background: transparent; }
 .w-batteries { padding: 9px 12px; display: flex; flex-direction: column; gap: 4px; }

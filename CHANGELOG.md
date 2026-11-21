@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.22.9 — 2026-11-20
+
+**Panel**
+- New **Phone webcam** widget: the phone's camera as a webcam on the PC. Tap the camera button to switch it on, see the
+  picture in the widget, flip between the front and back camera, tap again to switch it off. Off until you tap it;
+  Android asks for the camera the first time. The widget says where the picture goes (on the PC, phone only, PC out of
+  reach) and why it can't (no permission, camera in use by another app). Options: which camera, HD (1280 × 720) or
+  standard (640 × 480), and whether the picture goes to the PC at all.
+
+**Agent**
+- On Windows the picture feeds **OBS Virtual Camera**, so Zoom, Teams, Discord, Meet in the browser and other video
+  apps can pick it. OBS Studio has to be installed (its installer registers that camera); it needn't be running. If
+  OBS runs its own virtual camera, that one wins and the widget says so. The camera is 1280 × 720 at 30 frames a
+  second; a portrait picture gets black bars instead of being stretched.
+- Every system: the picture is also an MJPEG stream at `http://127.0.0.1:8765/api/webcam/mjpeg` (this computer only),
+  for OBS's Media Source, VLC or a browser.
+- Over Wi-Fi only the upload itself (`/api/webcam/frame`, `/api/webcam/stop`) is open, with the paired key; the
+  agent keeps only the latest picture in memory and ends the stream 3 seconds after the last one.
+
+**Phone app**
+- Camera2 capture (Android 5+, no new libraries), turned upright and compressed on the phone; a slow link drops
+  pictures instead of falling behind. The camera stops when the panel goes to the background, the screen turns off or
+  the panel reloads.
+
 ## 0.9.22.8 — 2026-11-20
 
 **Panel**
@@ -32,7 +56,6 @@
   followed only Windows' "current" media session, which stays on the stopped video, so a "media playing" rule ended
   and the panel went back to its home page while the music played on. A playing session now wins over a current one
   that is not playing (the one already on screen first), and play / pause / next act on the session the panel shows.
-
 ## 0.9.22.1 — 2026-11-20
 
 First build of this fork (dhiya13/phonebox), on upstream 0.9.22. Fork versions add a fourth number to the upstream
