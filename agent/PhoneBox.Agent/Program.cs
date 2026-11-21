@@ -490,6 +490,7 @@ object State(IServiceProvider sp, long? ev)
         rules = sp.GetRequiredService<RuleEngine>().Active(),
         rulesPaused = sp.GetRequiredService<RuleEngine>().PausedUntil(),
         privacy = sp.GetRequiredService<PrivacyMonitor>().Snapshot(),
+        webcamWanted = sp.GetRequiredService<PhoneWebcam>().Wanted,
         obs = sp.GetRequiredService<ObsMonitor>().Snapshot() is { Connected: true } o ? new { o.Streaming, o.Recording, o.RecordPaused } : null,
         toggles = Shortcuts.States(sp.GetRequiredService<ConfigStore>().Get(), push, sp.GetRequiredService<AudioControl>()),
     };

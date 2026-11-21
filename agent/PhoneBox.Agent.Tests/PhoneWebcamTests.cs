@@ -12,7 +12,11 @@ public sealed class PhoneWebcamTests : IDisposable
     private long _now = 100_000;
     private static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 0xFF, 0xD9];
 
-    public void Dispose() { try { File.Delete(_path); } catch { } }
+    public void Dispose()
+    {
+        try { File.Delete(_path); } catch { }
+        try { Directory.Delete(_dir, true); } catch { }
+    }
 
     private sealed class FakeOutput : IWebcamOutput
     {
@@ -21,6 +25,9 @@ public sealed class PhoneWebcamTests : IDisposable
         public string State => "obs";
         public void Push(byte[] jpeg) => Pushed.Add(jpeg.Length);
         public void Stop() => Stops++;
+        public bool Armed;
+        public int Readers { get; set; } = -1;
+        public void Arm(bool on) { Armed = on; if (!on) Readers = -1; else if (Readers < 0) Readers = 0; }
         public void Dispose() { }
     }
 
@@ -36,6 +43,105 @@ public sealed class PhoneWebcamTests : IDisposable
     }
 
     private static string Json(object body) => JsonSerializer.Serialize(body);
+
+    private readonly string _dir = Directory.CreateTempSubdirectory("phonebox-webcam-").FullName;
+
+    private (PhoneWebcam Cam, PushStore Push) MakeAuto(string options = """{ "auto": true }""", bool enabledPage = true)
+    {
+        File.WriteAllText(_path, $$"""
+            { "pages": [ { "id": "home", "title": "Home", "widgets": [] }, { "id": "live", "title": "Live", "enabled": {{(enabledPage ? "true" : "false")}}, "widgets": [
+                { "id": "cam", "type": "webcam", "x": 0, "y": 0, "w": 12, "h": 6, "options": {{options}} } ] } ] }
+            """);
+        var push = new PushStore(NullLogger<PushStore>.Instance, Path.Combine(_dir, "events.json"));
+        return (new PhoneWebcam(new ConfigStore(_path), NullLogger.Instance, _out, push, timer: false) { Now = () => _now }, push);
+    }
+
+    private static List<bool> WantedEvents(PushStore push) =>
+        push.Since(0).Where(e => e.Kind == "webcam").Select(e => e.Data!.Value.GetProperty("wanted").GetBoolean()).ToList();
+
+    [Theory]
+    [InlineData("""{ "facing": "front" }""", true)]       // auto-start is off by default
+    [InlineData("""{ "auto": true, "pc": false }""", true)] // the picture may not go to the computer
+    [InlineData("""{ "auto": true }""", false)]            // on a disabled page
+    public void TheCameraIsOnlyArmedForAnEnabledAutoStartWidget(string options, bool enabledPage)
+    {
+        var (cam, _) = MakeAuto(options, enabledPage);
+        using (cam)
+        {
+            cam.Watch();
+            Assert.False(_out.Armed);
+        }
+    }
+
+    [Fact]
+    public void AnAppReadingTheCameraAsksThePhoneAndLettingGoEndsIt()
+    {
+        var (cam, push) = MakeAuto();
+        using (cam)
+        {
+            cam.Watch();
+            Assert.True(_out.Armed);
+            Assert.False(cam.Wanted);
+            _out.Readers = 1;
+            cam.Watch();                       // a glance (an app reading the formats) isn't enough
+            Assert.False(cam.Wanted);
+            _now += (long)PhoneWebcam.WantDelay.TotalMilliseconds;
+            cam.Watch();
+            Assert.True(cam.Wanted);
+            Assert.Equal([true], WantedEvents(push));
+
+            _out.Readers = 0;                  // the app reopens the camera (another resolution): keep going
+            cam.Watch();
+            _now += 1000;
+            _out.Readers = 1;
+            cam.Watch();
+            Assert.True(cam.Wanted);
+
+            _out.Readers = 0;
+            cam.Watch();
+            _now += (long)PhoneWebcam.ReleaseDelay.TotalMilliseconds;
+            cam.Watch();
+            Assert.False(cam.Wanted);
+            Assert.Equal([true, false], WantedEvents(push));
+        }
+    }
+
+    [Fact]
+    public void SwitchingAutoStartOffEndsTheRequestAtOnce()
+    {
+        var (cam, push) = MakeAuto();
+        using (cam)
+        {
+            cam.Watch();
+            _out.Readers = 1;
+            cam.Watch();
+            _now += (long)PhoneWebcam.WantDelay.TotalMilliseconds;
+            cam.Watch();
+            Assert.True(cam.Wanted);
+            File.WriteAllText(_path, """{ "pages": [ { "id": "home", "title": "Home", "widgets": [] } ] }""");
+            _now += 10;
+            WaitFor(() => { cam.Watch(); return !_out.Armed; });
+            Assert.False(cam.Wanted);
+            Assert.Equal([true, false], WantedEvents(push));
+        }
+    }
+
+    private static void WaitFor(Func<bool> ok)
+    {
+        // the config store picks up a file change on its own (a file watcher)
+        for (var i = 0; i < 100 && !ok(); i++) Thread.Sleep(50);
+        Assert.True(ok());
+    }
+
+    [Fact]
+    public void TheStateTellsThePhoneWhetherAnAppWantsTheCamera()
+    {
+        var (cam, _) = MakeAuto();
+        using (cam)
+        {
+            Assert.Contains("\"wanted\":false", Json(cam.Status()));
+        }
+    }
 
     [Fact]
     public void APictureFromItsWidgetGoesToTheVirtualCamera()

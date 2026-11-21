@@ -17,6 +17,10 @@ namespace PhoneBox.Agent;
 /// reads the queue at its own pace and gives up after ten reads of the same picture, so the latest picture is written
 /// again on every tick, not only when the phone sends one. Decoding happens on that same thread; a request from the
 /// phone only hands its picture over.
+///
+/// Armed (auto-start), the queue stays open between the phone's streams with a "starting" picture, and the number of
+/// handles to it, every process's, says how many video apps read it: the camera opens the queue while an app streams
+/// from it and closes it when the app stops.
 /// </summary>
 internal sealed class ObsVirtualCamOutput : IWebcamOutput
 {
@@ -30,11 +34,15 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
     private readonly object _lock = new();
     private readonly AutoResetEvent _wake = new(false);
     private byte[]? _pending;
+    private bool _live;     // the phone sends pictures
+    private bool _armed;    // auto-start: keep the queue open with a waiting picture between the phone's streams
     private bool _running;
     private int _generation;
     private Thread? _thread;
     private volatile string _state;
+    private volatile int _readers = -1;
     private bool _disposed;
+    private byte[]? _idle;
 
     public ObsVirtualCamOutput(ILogger log)
     {
@@ -43,6 +51,8 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
     }
 
     public string State => _state;
+
+    public int Readers => _readers;
 
     private static bool Installed()
     {
@@ -56,21 +66,36 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
         {
             if (_disposed) return;
             _pending = jpeg;
-            if (!_running)
-            {
-                _running = true;
-                var generation = ++_generation;
-                _thread = new Thread(() => Run(generation)) { IsBackground = true, Name = "phone webcam" };
-                _thread.Start();
-            }
+            _live = true;
+            EnsureThread();
         }
         _wake.Set();
     }
 
     public void Stop()
     {
-        lock (_lock) { _running = false; _pending = null; }
+        lock (_lock) { _live = false; _pending = null; }
         _wake.Set();
+    }
+
+    public void Arm(bool on)
+    {
+        lock (_lock)
+        {
+            if (_disposed || _armed == on) return;
+            _armed = on;
+            if (on) EnsureThread();
+        }
+        _wake.Set();
+    }
+
+    private void EnsureThread() // under _lock
+    {
+        if (_running) return;
+        _running = true;
+        var generation = ++_generation;
+        _thread = new Thread(() => Run(generation)) { IsBackground = true, Name = "phone webcam" };
+        _thread.Start();
     }
 
     private void Run(int generation)
@@ -78,41 +103,77 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
         IntPtr mapping = IntPtr.Zero, view = IntPtr.Zero;
         var nv12 = new byte[Width * Height * 3 / 2];
         var (offsets, size) = PhoneWebcam.ObsQueueLayout(Width, Height);
-        var haveFrame = false;
+        var haveFrame = false; // a decoded picture of the current stream
+        var idleSlots = 0;     // how many of the three slots hold the waiting picture
         var tick = System.Diagnostics.Stopwatch.StartNew();
-        long next = 0;
+        long next = 0, lastIdle = 0, obsCheck = -10_000;
         uint write = 0;
         var lastTry = -10_000L;
+        var obsRunning = false;
         try
         {
             while (true)
             {
                 byte[]? jpeg;
+                bool live, armed;
                 lock (_lock)
                 {
-                    // a Stop and a new Push in between start a new thread: this one ends
-                    if (!_running || generation != _generation) return;
+                    // a newer thread took over (Dispose, or this one ended and a new Push started another): this one ends
+                    if (generation != _generation || _disposed) return;
+                    live = _live;
+                    armed = _armed;
+                    if (!live && !armed)
+                    {
+                        // closed under the lock, so a Push right after starts a thread that finds the queue free
+                        Close(ref mapping, ref view);
+                        _readers = -1;
+                        _running = false;
+                        _thread = null;
+                        return;
+                    }
                     jpeg = _pending;
                     _pending = null;
                 }
-                if (jpeg is not null && Decode(jpeg, nv12)) haveFrame = true;
-                if (view == IntPtr.Zero && haveFrame && tick.ElapsedMilliseconds - lastTry > 1000)
+                if (!live) haveFrame = false;
+                else if (jpeg is not null && Decode(jpeg, nv12)) haveFrame = true;
+
+                // OBS Studio itself can't start its own virtual camera while this queue exists: between the phone's
+                // streams, auto-start leaves it to OBS while OBS is open
+                if (armed && tick.ElapsedMilliseconds - obsCheck > 3000)
+                {
+                    obsCheck = tick.ElapsedMilliseconds;
+                    obsRunning = ObsRunning();
+                }
+                var waiting = armed && !obsRunning;
+                if (view != IntPtr.Zero && !haveFrame && !waiting) { Close(ref mapping, ref view); _readers = -1; }
+
+                if (view == IntPtr.Zero && (haveFrame || waiting) && tick.ElapsedMilliseconds - lastTry > 1000)
                 {
                     lastTry = tick.ElapsedMilliseconds;
                     if (!Installed()) _state = "missing";
-                    else if (Open(size, offsets, out mapping, out view)) _state = "obs";
+                    else if (Open(size, offsets, out mapping, out view)) { _state = "obs"; idleSlots = 0; }
                 }
-                if (view != IntPtr.Zero && haveFrame)
+                if (view != IntPtr.Zero)
                 {
-                    // video_queue_write: bump write_idx, fill that slot (timestamp, then the picture), publish read_idx, READY
-                    write++;
-                    var slot = (int)offsets[write % 3];
-                    Marshal.WriteInt32(view, 0, unchecked((int)write));
-                    Marshal.WriteInt64(view, slot, tick.Elapsed.Ticks); // 100 ns units
-                    Marshal.Copy(nv12, 0, view + slot + (int)PhoneWebcam.ObsFrameHeaderSize, nv12.Length);
-                    Thread.MemoryBarrier();
-                    Marshal.WriteInt32(view, 4, unchecked((int)write));
-                    Marshal.WriteInt32(view, 8, StateReady);
+                    if (haveFrame)
+                    {
+                        Write(view, offsets, ref write, tick, nv12);
+                        idleSlots = 0;
+                    }
+                    else if (idleSlots < 3)
+                    {
+                        // the waiting picture into every slot once, then only fresh indexes: the camera gives up after
+                        // ten reads of the same index, and copying the same picture 30 times a second would be waste
+                        Write(view, offsets, ref write, tick, _idle ??= IdlePicture());
+                        idleSlots++;
+                        lastIdle = tick.ElapsedMilliseconds;
+                    }
+                    else if (tick.ElapsedMilliseconds - lastIdle >= 100)
+                    {
+                        Write(view, offsets, ref write, tick, null);
+                        lastIdle = tick.ElapsedMilliseconds;
+                    }
+                    _readers = Math.Max(0, HandleCount(mapping) - 1); // every handle but this one is a video app's
                 }
                 next += 33;
                 var wait = next - tick.ElapsedMilliseconds;
@@ -128,8 +189,63 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
         finally
         {
             Close(ref mapping, ref view);
-            lock (_lock) { if (generation == _generation) { _running = false; _thread = null; } }
+            lock (_lock) { if (generation == _generation) { _running = false; _thread = null; _readers = -1; } }
         }
+    }
+
+    /// <summary>video_queue_write: bump write_idx, fill that slot (timestamp, then the picture unless it's there already),
+    /// publish read_idx, READY.</summary>
+    private static void Write(IntPtr view, uint[] offsets, ref uint write, System.Diagnostics.Stopwatch tick, byte[]? nv12)
+    {
+        write++;
+        var slot = (int)offsets[write % 3];
+        Marshal.WriteInt32(view, 0, unchecked((int)write));
+        Marshal.WriteInt64(view, slot, tick.Elapsed.Ticks); // 100 ns units
+        if (nv12 is not null) Marshal.Copy(nv12, 0, view + slot + (int)PhoneWebcam.ObsFrameHeaderSize, nv12.Length);
+        Thread.MemoryBarrier();
+        Marshal.WriteInt32(view, 4, unchecked((int)write));
+        Marshal.WriteInt32(view, 8, StateReady);
+    }
+
+    private static bool ObsRunning()
+    {
+        var procs = System.Diagnostics.Process.GetProcessesByName("obs64");
+        foreach (var p in procs) p.Dispose();
+        return procs.Length > 0;
+    }
+
+    /// <summary>What a video app shows until the phone's picture arrives.</summary>
+    private static byte[] IdlePicture()
+    {
+        var nv12 = new byte[Width * Height * 3 / 2];
+        using var bmp = new Bitmap(Width, Height, PixelFormat.Format32bppRgb);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(Color.FromArgb(18, 20, 24));
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            using var big = new Font("Segoe UI Semibold", 54, GraphicsUnit.Pixel);
+            using var small = new Font("Segoe UI", 30, GraphicsUnit.Pixel);
+            using var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString("PhoneBox", big, Brushes.White, new RectangleF(0, Height / 2f - 70, Width, 80), fmt);
+            using var grey = new SolidBrush(Color.FromArgb(170, 176, 186));
+            g.DrawString("Starting the phone camera\u2026", small, grey, new RectangleF(0, Height / 2f + 10, Width, 60), fmt);
+        }
+        var data = bmp.LockBits(new Rectangle(0, 0, Width, Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+        try
+        {
+            var bytes = new byte[data.Stride * Height];
+            Marshal.Copy(data.Scan0, bytes, 0, bytes.Length);
+            PhoneWebcam.BgrxToNv12(bytes, data.Stride, Width, Height, nv12);
+        }
+        finally { bmp.UnlockBits(data); }
+        return nv12;
+    }
+
+    /// <summary>How many handles to the queue are open, in every process (NtQueryObject, ObjectBasicInformation).</summary>
+    private static int HandleCount(IntPtr handle)
+    {
+        var info = new byte[56];
+        return NtQueryObject(handle, 0, info, info.Length, out _) == 0 ? BitConverter.ToInt32(info, 8) : 0;
     }
 
     private const int StateStarting = 1, StateReady = 2, StateStopping = 3;
@@ -211,7 +327,7 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
     public void Dispose()
     {
         Thread? t;
-        lock (_lock) { _disposed = true; _running = false; t = _thread; }
+        lock (_lock) { _disposed = true; _running = false; _armed = false; _live = false; t = _thread; }
         _wake.Set();
         t?.Join(1000);
     }
@@ -229,4 +345,6 @@ internal sealed class ObsVirtualCamOutput : IWebcamOutput
     private static extern bool UnmapViewOfFile(IntPtr view);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("ntdll.dll")]
+    private static extern int NtQueryObject(IntPtr handle, int infoClass, byte[] info, int length, out int returned);
 }
