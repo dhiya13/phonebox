@@ -195,6 +195,14 @@ public sealed class DisplayConfig
     public int MinDwellSec { get; set; } = 15;
     /// <summary>A rule keeps its page at most this many minutes, then the idle return may take over; 0 = as long as the rule lasts.</summary>
     public int HoldMaxMin { get; set; } = 30;
+    /// <summary>
+    /// The page the phone shows when it has not reached this computer for <see cref="PcOffSec"/> seconds (the PC is
+    /// off or asleep); null = stay where it is. When the computer answers again the phone goes to the home page once.
+    /// The phone does this itself: the agent is not running then.
+    /// </summary>
+    public string? PcOffPage { get; set; }
+    /// <summary>Seconds without an answer from the computer before the phone shows <see cref="PcOffPage"/>.</summary>
+    public int PcOffSec { get; set; } = 30;
 }
 
 public sealed class LanConfig
@@ -591,6 +599,8 @@ public sealed partial class ConfigStore(string path)
             : originalPageIds.TryGetValue(id.Trim(), out var trimmed) ? trimmed
             : id.Trim();
         c.Display.HomePage = string.IsNullOrWhiteSpace(c.Display.HomePage) ? null : PageId(c.Display.HomePage).Trim();
+        c.Display.PcOffPage = string.IsNullOrWhiteSpace(c.Display.PcOffPage) ? null : PageId(c.Display.PcOffPage).Trim();
+        c.Display.PcOffSec = Math.Clamp(c.Display.PcOffSec, 5, 600);
 
         var used = new HashSet<string>();
         c.Shortcuts = (c.Shortcuts ?? []).Where(s => s is not null).ToList(); // "shortcuts": [null] in a hand-written file

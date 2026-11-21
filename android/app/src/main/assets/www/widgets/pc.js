@@ -333,6 +333,7 @@ W.button = {
   create(box, { o }) {
     const look = { cover: o.cover === true, label: o.showLabel !== false, picture: o.picture || null };
     if (o.action === 'ha') return haButton(box, o, look);
+    if (o.action === 'wol') return wolButton(box, o, look);
     const base = (cfg.shortcuts || []).find((x) => x.id === o.id) || (cfg.shortcuts || [])[0];
     if (!base) { box.append(h('div', 'empty', t('w.pickShortcut'))); return {}; }
     box.append(keyButton({ ...base, label: o.label || base.label, icon: o.icon || base.icon, color: o.color || base.color }, look));
@@ -393,6 +394,32 @@ function haButton(box, o, look) {
   box.append(b);
   const tick = every(5000, load, 15_000);
   return { update: () => tick() };
+}
+
+// Wake this PC: the phone sends the Wake-on-LAN packet itself (WakeOnLan.kt answers POST /wol/wake without asking the
+// computer, which is off when this is needed). It learns the PC's address while the PC is on; until then it says so. A
+// panel that reaches the agent instead (a browser) is talking to a computer that is on, and says that.
+function wolButton(box, o, look) {
+  const s = { id: 'wol', label: o.label || t('w.button.wakePc'), icon: o.icon || '🖥️', color: o.color || '#22c55e' };
+  const tap = async (btn) => {
+    haptic();
+    btn.classList.remove('ok', 'err');
+    btn.classList.add('busy');
+    let msg = null, ok = false;
+    try {
+      const r = await fetch(`${API}/wol/wake`, { method: 'POST', cache: 'no-store', headers: PANEL_HEADERS });
+      const j = await r.json().catch(() => ({}));
+      ok = r.ok;
+      msg = !r.ok ? (j.error === 'no-target' ? t('panel.wolNoTarget') : t('panel.wolFailed'))
+        : j.awake ? t('panel.wolAwake') : t('panel.wolSent');
+    } catch (_) { msg = t('panel.wolFailed'); }
+    btn.classList.remove('busy');
+    btn.classList.add(ok ? 'ok' : 'err');
+    toast(msg, ok ? 'ok' : 'err');
+    setTimeout(() => btn.classList.remove('ok', 'err'), 900);
+  };
+  box.append(keyButton(s, { ...look, onTap: tap }));
+  return {};
 }
 
 // Docker / Podman containers on the PC. Tap one for start / stop / restart (when the widget allows it).

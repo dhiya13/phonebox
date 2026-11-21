@@ -708,6 +708,9 @@ nav a.on::before { color: var(--accent); }
           <div class="field"><label data-i18n="s.pageSwitch.minDwell">At least (seconds between two automatic switches)</label><input type="number" min="0" max="600" data-bind="display.minDwellSec" data-type="int"></div>
           <div class="field"><label data-i18n="s.pageSwitch.holdMax">A rule keeps its page at most (minutes, 0 = while it lasts)</label><input type="number" min="0" max="1440" data-bind="display.holdMaxMin" data-type="int">
             <span class="hint" data-i18n="s.pageSwitch.holdMaxHint">After that the panel goes home when nobody touches it.</span></div>
+          <div class="field"><label data-i18n="s.pageSwitch.pcOffPage">When the PC is off, show page</label><select id="pcOffPageSel" onchange="cfg.display.pcOffPage = this.value || null; changed()"></select>
+            <span class="hint" data-i18n="s.pageSwitch.pcOffHint">The phone switches by itself when it cannot reach this PC, and goes to the home page once when the PC is back. Home Assistant buttons keep working if Settings › General › Home Assistant lets phones reach it themselves.</span></div>
+          <div class="field"><label data-i18n="s.pageSwitch.pcOffSec">…after (seconds without an answer from the PC)</label><input type="number" min="5" max="600" data-bind="display.pcOffSec" data-type="int"></div>
         </div>
       </div>
 
@@ -1275,6 +1278,10 @@ function fillHomeSelect() {
   if (!sel) return;
   sel.replaceChildren(h('option', { value: '' }, t('s.js.firstPage')), ...cfg.pages.filter((p) => p.id).map((p) => h('option', { value: p.id, selected: p.id === cfg.display.homePage }, plain(`${p.icon || ''} ${p.title}`))));
   sel.value = cfg.display.homePage || '';
+  const off = $('pcOffPageSel');
+  if (!off) return;
+  off.replaceChildren(h('option', { value: '' }, t('s.pageSwitch.pcOffNone')), ...cfg.pages.filter((p) => p.id).map((p) => h('option', { value: p.id }, plain(`${p.icon || ''} ${p.title}`))));
+  off.value = cfg.pages.some((p) => p.id && p.id === cfg.display.pcOffPage) ? cfg.display.pcOffPage : '';
 }
 
 function renderPageEditor() {
@@ -1845,15 +1852,23 @@ function optionField(w, o, onValChange) {
 // colour fall back to the shortcut's (or, for Home Assistant, the entity's name); the picture is the button's own upload.
 function buttonActionEditor(w, set) {
   const o = () => w.options || {};
-  const ha = o().action === 'ha';
+  const ha = o().action === 'ha', wol = o().action === 'wol';
   const box = h('div', { class: 'card', style: { padding: '10px 12px', margin: '0 0 12px' } });
   const pick = (val) => { set('action', val); renderInspector(); };
   box.append(h('div', { class: 'field' }, h('label', {}, t('s.btn.action')),
     h('div', { class: 'row', style: { gap: '6px' } },
-      h('button', { class: 'btn sm' + (ha ? '' : ' primary'), type: 'button', onclick: () => pick('shortcut') }, t('s.btn.shortcut')),
-      h('button', { class: 'btn sm' + (ha ? ' primary' : ''), type: 'button', onclick: () => pick('ha') }, t('s.btn.ha')))));
+      h('button', { class: 'btn sm' + (ha || wol ? '' : ' primary'), type: 'button', onclick: () => pick('shortcut') }, t('s.btn.shortcut')),
+      h('button', { class: 'btn sm' + (ha ? ' primary' : ''), type: 'button', onclick: () => pick('ha') }, t('s.btn.ha')),
+      h('button', { class: 'btn sm' + (wol ? ' primary' : ''), type: 'button', onclick: () => pick('wol') }, t('s.btn.wol')))));
   const shortcut = cfg.shortcuts.find((s) => s.id === o().id) || cfg.shortcuts[0];
-  if (!ha) {
+  if (wol) {
+    // the adapter the phone will wake, as this computer sees it now
+    const hint = h('span', { class: 'hint' }, '…');
+    fetch('/api/wol').then((r) => r.json()).then((j) => {
+      hint.textContent = j.mac ? t('s.btn.wolHint', { adapter: `${j.name} (${j.mac}, ${j.address})` }) : t('s.btn.wolNone');
+    }).catch(() => { hint.textContent = t('s.btn.wolNone'); });
+    box.append(hint);
+  } else if (!ha) {
     box.append(h('div', { class: 'field' }, h('label', {}, t('s.btn.shortcut')),
       h('select', { onchange: (e) => { set('id', e.target.value); renderInspector(); } }, h('option', { value: '' }, t('s.js.firstShortcut')),
         ...cfg.shortcuts.map((s) => h('option', { value: s.id, selected: s.id === o().id }, plain(`${s.icon} ${s.label}`) || s.id)))));
@@ -1865,13 +1880,13 @@ function buttonActionEditor(w, set) {
         onchange: (e) => set('entity', e.target.value.trim()) }), list,
       h('span', { class: 'hint' }, cfg.homeAssistant?.url ? t('s.btn.entityHint') : t('s.btn.haNotSet'))));
   }
-  const fallback = ha ? '' : (shortcut?.label || '');
+  const fallback = wol ? t('w.button.wakePc') : ha ? '' : (shortcut?.label || '');
   box.append(h('div', { class: 'row', style: { gap: '8px', alignItems: 'flex-end' } },
     h('div', { class: 'field', style: { flex: '2' } }, h('label', {}, t('s.btn.label')),
       h('input', { type: 'text', value: o().label || '', maxlength: 60, placeholder: fallback || t('s.btn.labelAuto'), oninput: (e) => set('label', e.target.value) })),
     h('div', { class: 'field', style: { flex: '1' } }, h('label', {}, t('s.btn.icon')),
-      h('input', { type: 'text', value: o().icon || '', maxlength: 16, placeholder: ha ? '' : (shortcut?.icon || ''), oninput: (e) => set('icon', e.target.value.trim()) }))));
-  const colour = h('input', { type: 'color', value: o().color || (ha ? '#14b8a6' : shortcut?.color || '#6b7280'), oninput: (e) => set('color', e.target.value) });
+      h('input', { type: 'text', value: o().icon || '', maxlength: 16, placeholder: wol ? '🖥️' : ha ? '' : (shortcut?.icon || ''), oninput: (e) => set('icon', e.target.value.trim()) }))));
+  const colour = h('input', { type: 'color', value: o().color || (wol ? '#22c55e' : ha ? '#14b8a6' : shortcut?.color || '#6b7280'), oninput: (e) => set('color', e.target.value) });
   box.append(h('div', { class: 'field' }, h('label', {}, t('s.btn.color')),
     h('div', { class: 'row', style: { gap: '8px' } }, colour,
       h('div', { class: 'swatches' }, ...COLORS.map((c) => h('button', { type: 'button', style: { background: c }, onclick: () => { set('color', c); renderInspector(); } }))),
@@ -1899,7 +1914,7 @@ function buttonActionEditor(w, set) {
     h('div', { class: 'row', style: { alignItems: 'center', gap: '8px' } }, preview, file,
       h('button', { class: 'btn sm', type: 'button', onclick: () => file.click() }, t('s.k.upload') + '…'),
       o().picture ? h('button', { class: 'btn sm', type: 'button', onclick: () => { set('picture', ''); renderInspector(); } }, t('s.btn.removePicture')) : null),
-    h('span', { class: 'hint' }, o().picture ? t('s.btn.pictureHint') : ha ? t('s.btn.pictureHintHa') : t('s.btn.pictureHintShortcut'))));
+    h('span', { class: 'hint' }, o().picture ? t('s.btn.pictureHint') : ha || wol ? t('s.btn.pictureHintHa') : t('s.btn.pictureHintShortcut'))));
   return box;
 }
 
