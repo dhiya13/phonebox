@@ -14,6 +14,13 @@ namespace PhoneBox.Agent;
 /// </list>
 /// Without a new picture for <see cref="Stale"/> the stream ends (the phone was unplugged, locked or switched off), so
 /// an old picture is never shown as if it were live.
+///
+/// Auto-start (a webcam widget's "Start when an app on the PC uses the camera" option, off by default): the agent then
+/// keeps OBS Virtual Camera's video queue open with a "starting" picture and watches whether a video app reads it. When
+/// one does for <see cref="WantDelay"/>, it tells the phones (a "webcam" event, and <see cref="Wanted"/> in the state);
+/// they switch to that widget's page and start the camera. When the app lets go for <see cref="ReleaseDelay"/>, it
+/// tells them again and they stop and go back. Only apps that use OBS Virtual Camera count (DirectShow: browsers,
+/// Discord, Zoom, Teams…); Windows' own camera-in-use list doesn't see them, and the Windows Camera app can't pick it.
 /// </summary>
 public sealed class PhoneWebcam : IDisposable
 {
@@ -21,10 +28,16 @@ public sealed class PhoneWebcam : IDisposable
     /// <summary>A 1280 × 720 JPEG at the phone's quality is ~100–200 KB; anything much larger isn't a camera picture.</summary>
     public const int MaxFrameBytes = 1_500_000;
     public static readonly TimeSpan Stale = TimeSpan.FromSeconds(3);
+    /// <summary>A video app has to read the camera this long before the phone is asked (an app that only looks at the
+    /// camera's formats opens it for a moment).</summary>
+    public static readonly TimeSpan WantDelay = TimeSpan.FromSeconds(1);
+    /// <summary>The app has to let go this long before the phone stops (switching cameras or settings in a call reopens it).</summary>
+    public static readonly TimeSpan ReleaseDelay = TimeSpan.FromSeconds(4);
 
     private readonly ConfigStore _config;
     private readonly ILogger _log;
     private readonly IWebcamOutput? _output;
+    private readonly PushStore? _push;
     private readonly object _lock = new();
     private readonly System.Threading.Timer _watchdog;
     private byte[]? _jpeg;
@@ -32,16 +45,53 @@ public sealed class PhoneWebcam : IDisposable
     private long _at;
     private string _device = "";
     private TaskCompletionSource _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private volatile bool _wanted;
+    private long _readSince, _quietSince;
     internal Func<long> Now { get; set; } = () => Environment.TickCount64;
 
-    public PhoneWebcam(ConfigStore config, ILogger<PhoneWebcam> log) : this(config, log, CreateOutput(log)) { }
+    public PhoneWebcam(ConfigStore config, ILogger<PhoneWebcam> log, PushStore push) : this(config, log, CreateOutput(log), push) { }
 
-    internal PhoneWebcam(ConfigStore config, ILogger log, IWebcamOutput? output)
+    internal PhoneWebcam(ConfigStore config, ILogger log, IWebcamOutput? output, PushStore? push = null, bool timer = true)
     {
         _config = config;
         _log = log;
         _output = output;
-        _watchdog = new System.Threading.Timer(_ => Expire(), null, 1000, 1000);
+        _push = push;
+        _watchdog = new System.Threading.Timer(_ => { if (timer) Tick(); }, null, 1000, 1000);
+    }
+
+    private void Tick()
+    {
+        try { Expire(); Watch(); }
+        catch (Exception ex) { _log.LogDebug("phone webcam: {Message}", ex.Message); }
+    }
+
+    /// <summary>Whether a video app on this computer is reading the camera, so the phones should send theirs (auto-start).</summary>
+    public bool Wanted => _wanted;
+
+    /// <summary>Whether a webcam widget on an enabled page has auto-start on (and may send to the computer). Like the
+    /// phone, which looks for that widget, it counts widgets placed on a page, not cards in a Smart Stack.</summary>
+    public static bool AutoStart(AgentConfig c) => c.Pages.Where(p => p.Enabled).SelectMany(p => p.Widgets ?? [])
+        .Any(w => w.Type == WidgetType && w.Bool("auto") == true && w.Bool("pc") != false);
+
+    /// <summary>Once a second: arms or disarms the virtual camera for auto-start and follows whether an app reads it.</summary>
+    internal void Watch()
+    {
+        var armed = _output is not null && AutoStart(_config.Get());
+        _output?.Arm(armed);
+        var reading = armed && _output!.Readers > 0;
+        var now = Now();
+        if (reading) { _quietSince = 0; if (_readSince == 0) _readSince = now; }
+        else { _readSince = 0; if (_quietSince == 0) _quietSince = now; }
+        if (!_wanted && reading && now - _readSince >= WantDelay.TotalMilliseconds) SetWanted(true);
+        else if (_wanted && !reading && (!armed || now - _quietSince >= ReleaseDelay.TotalMilliseconds)) SetWanted(false);
+    }
+
+    private void SetWanted(bool wanted)
+    {
+        _wanted = wanted;
+        _log.LogInformation(wanted ? "phone webcam: an app on this computer reads the camera, asking the phone" : "phone webcam: the app let go of the camera");
+        _push?.Emit("webcam", System.Text.Json.JsonSerializer.SerializeToElement(new { wanted }));
     }
 
     private static IWebcamOutput? CreateOutput(ILogger log)
@@ -100,7 +150,7 @@ public sealed class PhoneWebcam : IDisposable
 
     public object Status()
     {
-        lock (_lock) return new { live = _jpeg is not null, pc = OutputState, frames = _seq };
+        lock (_lock) return new { live = _jpeg is not null, pc = OutputState, frames = _seq, wanted = _wanted, readers = _output?.Readers ?? -1 };
     }
 
     internal void Expire()
@@ -236,4 +286,8 @@ internal interface IWebcamOutput : IDisposable
     string State { get; }
     void Push(byte[] jpeg);
     void Stop();
+    /// <summary>Keep the camera open with a waiting picture between the phone's streams, to see when an app reads it.</summary>
+    void Arm(bool on);
+    /// <summary>How many video apps read the camera right now (-1: not known, the camera isn't open).</summary>
+    int Readers { get; }
 }

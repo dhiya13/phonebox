@@ -14,7 +14,7 @@ import './widgets/photos.js';
 import './widgets/controls.js';
 import './widgets/console.js';
 import './widgets/dictate.js';
-import './widgets/webcam.js';
+import { autoWebcam } from './widgets/webcam.js';
 import './widgets/claude.js';
 import './widgets/camera.js';
 import './widgets/spectrum.js';
@@ -1234,6 +1234,7 @@ export function handleEvent(e) {
   else if (e.kind === 'notify' && e.data) handleNotify(e.data);
   else if (e.kind === 'goto' && e.data) requestPage(e.data);
   else if (e.kind === 'back' && e.data) requestBack(e.data.rule);
+  else if (e.kind === 'webcam' && e.data && !PREVIEW) autoWebcam(e.data.wanted);
   else if (e.kind === 'refresh') { loadConfig(); loadQuotas(); loadWork(); loadPush(); loadWeather(true); loadCalendar(); }
   else if (e.kind === 'reload') location.reload();
 }
@@ -2208,7 +2209,10 @@ export function applyState(s, replayGen = null) {
     evSeq = Math.max(evSeq ?? 0, s.evSeq ?? 0);
   }
   // the "back" event can be missed while offline; the list of active rules settles it
-  if (ruleHold && Array.isArray(s.rules) && !s.rules.includes(ruleHold.rule) && Date.now() - ruleHold.at > 8000) requestBack(ruleHold.rule);
+  // (the webcam auto-start holds its page like a rule, for as long as the agent says an app reads the camera)
+  const active = Array.isArray(s.rules) && s.webcamWanted ? [...s.rules, 'webcam'] : s.rules;
+  if (ruleHold && Array.isArray(active) && !active.includes(ruleHold.rule) && Date.now() - ruleHold.at > 8000) requestBack(ruleHold.rule);
+  if (s.webcamWanted !== undefined && !PREVIEW) autoWebcam(s.webcamWanted);
   rulesPaused = s.rulesPaused || null;
   if (!$('overview').hidden) renderRulesBtn();
   {
