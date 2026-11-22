@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.22.14 — 2026-11-22
+
+**Agent**
+- PC lighting reaches fans and strips on ARGB headers: OpenRGB lists ASUS addressable headers at 0 LEDs until their
+  length is set, so the effect reached only the board itself. PhoneBox now gives every unsized header a length first
+  (120 by default, Settings › General › PC lighting › LEDs per ARGB header).
+
 ## 0.9.22.13 — 2026-11-22
 
 **Panel**

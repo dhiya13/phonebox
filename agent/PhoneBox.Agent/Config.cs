@@ -218,6 +218,11 @@ public sealed class LightingConfig
 {
     /// <summary>OpenRGB's program file; empty = look in the usual places (%LOCALAPPDATA%\Programs\OpenRGB, Program Files).</summary>
     public string? OpenRgbPath { get; set; }
+    /// <summary>
+    /// Length given to addressable headers OpenRGB reports at 0 LEDs (ASUS ARGB headers until sized), so effects reach
+    /// the fans and strips on them. A safe upper bound works; the exact count makes the rainbow tighter.
+    /// </summary>
+    public int ArgbLeds { get; set; } = 120;
 }
 
 public sealed class LanConfig
@@ -671,6 +676,7 @@ public sealed partial class ConfigStore(string path)
         if (string.IsNullOrWhiteSpace(c.Obs.Url)) c.Obs.Url = "ws://127.0.0.1:4455";
         c.HomeAssistant ??= new();
         c.Lighting ??= new();
+        c.Lighting.ArgbLeds = Math.Clamp(c.Lighting.ArgbLeds, 1, 500);
         c.Lighting.OpenRgbPath = string.IsNullOrWhiteSpace(c.Lighting.OpenRgbPath) ? null : c.Lighting.OpenRgbPath.Trim().Trim('"');
         c.HomeAssistant.Url = string.IsNullOrWhiteSpace(c.HomeAssistant.Url) ? null : c.HomeAssistant.Url.Trim().TrimEnd('/');
         c.HomeAssistant.Token = string.IsNullOrWhiteSpace(c.HomeAssistant.Token) ? null : c.HomeAssistant.Token.Trim();

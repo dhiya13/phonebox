@@ -121,6 +121,7 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
     /// <summary>Sets every OpenRGB device to the first of <paramref name="prefer"/> it has; returns the devices switched.</summary>
     private async Task<List<string>> ApplyAsync(string[] prefer, CancellationToken ct)
     {
+        var argbLeds = config.Get().Lighting.ArgbLeds;
         using var tcp = new TcpClient();
         await tcp.ConnectAsync("127.0.0.1", _port, ct);
         var s = tcp.GetStream();
@@ -134,7 +135,18 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
         for (uint i = 0; i < count; i++)
         {
             await Send(s, i, 1, BitConverter.GetBytes(proto), ct);
-            var (name, modes) = OpenRgbController.Parse((await Receive(s, ct)).Data, proto);
+            var (name, modes, zones) = OpenRgbController.Parse((await Receive(s, ct)).Data, proto);
+            // Addressable headers (ASUS ARGB, …) start at 0 LEDs until someone sets their length, and an effect then
+            // reaches nothing on them: give each empty, resizable zone the configured length first (RESIZEZONE).
+            for (var z = 0; z < zones.Count; z++)
+            {
+                if (zones[z].Count != 0 || zones[z].Max == 0) continue;
+                var size = (int)Math.Clamp((uint)argbLeds, Math.Max(1, zones[z].Min), zones[z].Max);
+                var resize = new byte[8];
+                BitConverter.GetBytes(z).CopyTo(resize, 0);
+                BitConverter.GetBytes(size).CopyTo(resize, 4);
+                await Send(s, i, 1000, resize, ct);
+            }
             var pick = prefer.Select(p => modes.FindIndex(m => m.Name.Equals(p, StringComparison.OrdinalIgnoreCase))).FirstOrDefault(i2 => i2 >= 0, -1);
             if (pick < 0) continue;
             var body = new byte[4 + modes[pick].Raw.Length];
@@ -176,8 +188,9 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
 public static class OpenRgbController
 {
     public sealed record Mode(string Name, byte[] Raw);
+    public sealed record Zone(string Name, uint Min, uint Max, uint Count);
 
-    public static (string Name, List<Mode> Modes) Parse(byte[] d, uint proto)
+    public static (string Name, List<Mode> Modes, List<Zone> Zones) Parse(byte[] d, uint proto)
     {
         var o = 4; // data size
         int I32() { var v = BitConverter.ToInt32(d, o); o += 4; return v; }
@@ -203,6 +216,22 @@ public static class OpenRgbController
             o += 4 * colors;
             modes.Add(new Mode(mn, d[start..o]));
         }
-        return (name, modes);
+        var zones = new List<Zone>();
+        uint U32() { var v = BitConverter.ToUInt32(d, o); o += 4; return v; }
+        var zoneCount = U16();
+        for (var z = 0; z < zoneCount; z++)
+        {
+            var zn = Str();
+            I32(); // type
+            var min = U32(); var max = U32(); var leds = U32();
+            var matrix = U16(); o += matrix; // matrix (height, width and map), when there is one
+            if (proto >= 4)
+            {
+                var segments = U16();
+                for (var sg = 0; sg < segments; sg++) { Str(); o += 4 * 3; }
+            }
+            zones.Add(new Zone(zn, min, max, leds));
+        }
+        return (name, modes, zones);
     }
 }

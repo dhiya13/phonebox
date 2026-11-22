@@ -28,6 +28,7 @@ public sealed class PcLightingTests : IDisposable
     {
         private readonly TcpListener _l = new(IPAddress.Loopback, 0);
         public readonly List<(uint Dev, int Mode)> Updates = [];
+        public readonly List<(uint Dev, int Zone, int Size)> Resizes = [];
         private readonly (string Name, string[] Modes)[] _devices;
         public int Port => ((IPEndPoint)_l.LocalEndpoint).Port;
         public FakeOpenRgb(params (string, string[])[] devices) { _devices = devices; _l.Start(); _ = Task.Run(Serve); }
@@ -58,6 +59,7 @@ public sealed class PcLightingTests : IDisposable
                                 _ => null,
                             };
                             if (id == 1101) lock (Updates) Updates.Add((dev, BitConverter.ToInt32(data, 4)));
+                            if (id == 1000) lock (Updates) Resizes.Add((dev, BitConverter.ToInt32(data, 0), BitConverter.ToInt32(data, 4)));
                             if (reply is null) continue;
                             var o = new byte[16]; "ORGB"u8.CopyTo(o); BitConverter.GetBytes(dev).CopyTo(o, 4); BitConverter.GetBytes(id).CopyTo(o, 8); BitConverter.GetBytes((uint)reply.Length).CopyTo(o, 12);
                             await s.WriteAsync(o); await s.WriteAsync(reply);
@@ -82,6 +84,14 @@ public sealed class PcLightingTests : IDisposable
                 Str(m); I32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0);
                 U16(1); U32(0xff0000); // one colour
             }
+            // zones: a fixed one, and (on the board) an addressable header nobody has sized yet
+            var zones = name == "Board" ? new[] { ("Mainboard", 4u, 4u, 4u), ("ARGB Header 1", 0u, 500u, 0u) } : new[] { ("Zone", 1u, 1u, 1u) };
+            U16((ushort)zones.Length);
+            foreach (var (zn, min, max, count) in zones)
+            {
+                Str(zn); I32(1); U32(min); U32(max); U32(count); U16(0); // no matrix
+                U16(0); // no segments
+            }
             var body = b.ToArray();
             var all = new byte[4 + body.Length]; BitConverter.GetBytes((uint)all.Length).CopyTo(all, 0); body.CopyTo(all, 4);
             return all;
@@ -105,6 +115,7 @@ public sealed class PcLightingTests : IDisposable
         Assert.Equal("rainbow", light.State);
         await Task.Delay(200);
         lock (fake.Updates) Assert.Equal([(0u, 2), (1u, 4), (2u, 3)], fake.Updates.ToArray()); // Spectrum Cycle, Rainbow, Spectrum Cycle
+        lock (fake.Updates) Assert.Equal([(1u, 1, 120)], fake.Resizes.ToArray()); // the empty ARGB header gets a length first
         lock (fake.Updates) fake.Updates.Clear();
         Assert.Null(await light.SetAsync("toggle"));
         Assert.Equal("dark", light.State);
@@ -136,8 +147,9 @@ public sealed class PcLightingTests : IDisposable
     {
         var data = typeof(FakeOpenRgb).GetMethod("Controller", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
             .Invoke(null, ["Board", new[] { "Direct", "Rainbow" }]) as byte[];
-        var (name, modes) = OpenRgbController.Parse(data!, 4);
+        var (name, modes, zones) = OpenRgbController.Parse(data!, 4);
         Assert.Equal("Board", name);
+        Assert.Equal([("Mainboard", 4u), ("ARGB Header 1", 0u)], zones.Select(z => (z.Name, z.Count)));
         Assert.Equal(["Direct", "Rainbow"], modes.Select(m => m.Name));
         Assert.All(modes, m => Assert.True(m.Raw.Length > 50));
     }
