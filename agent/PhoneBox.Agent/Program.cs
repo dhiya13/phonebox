@@ -69,6 +69,7 @@ builder.Services.AddSingleton<CommandRunner>();
 builder.Services.AddSingleton<ApprovalStore>();
 builder.Services.AddSingleton<ClaudeActions>();
 builder.Services.AddSingleton<HomeAssistant>();
+builder.Services.AddSingleton(sp => new PcLighting(sp.GetRequiredService<ConfigStore>(), sp.GetRequiredService<ILogger<PcLighting>>()));
 builder.Services.AddSingleton<AppConsole>();
 builder.Services.AddSingleton<Dictation>();
 builder.Services.AddSingleton<PhoneWebcam>();
@@ -541,6 +542,15 @@ app.MapPost("/api/docker/{id}/{action}", async (string id, string action, Docker
 // Home Assistant (widget): states of the entities the widgets list, and switching those a widget allows.
 app.MapGet("/api/ha/states", async (string? ids, HomeAssistant ha) =>
     Results.Json(await ha.StatesAsync((ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))));
+// PC lighting (Big button › PC lighting): rainbow / dark through OpenRGB, only while a Big button on an enabled page is set to it.
+app.MapGet("/api/lighting", (PcLighting lighting, ConfigStore cfg) => Results.Json(new
+{
+    state = lighting.State,
+    allowed = PcLighting.Allowed(cfg.Get()),
+    installed = PcLighting.FindOpenRgb(cfg.Get().Lighting) is not null,
+}));
+app.MapPost("/api/lighting/{mode}", async (string mode, PcLighting lighting, CancellationToken ct) =>
+    await lighting.SetAsync(mode, ct) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true, state = lighting.State }));
 app.MapPost("/api/ha/toggle/{id}", async (string id, HomeAssistant ha) =>
     await ha.ToggleAsync(id) is { } error ? Results.BadRequest(new { error }) : Results.Ok(new { ok = true }));
 // Home Assistant without this computer: what a paired phone needs to reach Home Assistant itself while the computer is off

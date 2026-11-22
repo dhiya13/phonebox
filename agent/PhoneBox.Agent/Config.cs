@@ -37,6 +37,7 @@ public sealed class AgentConfig
     public CameraConfig Cameras { get; set; } = new();
     /// <summary>Home Assistant address and long-lived access token (the token never goes to the phone).</summary>
     public HomeAssistantConfig HomeAssistant { get; set; } = new();
+    public LightingConfig Lighting { get; set; } = new();
     /// <summary>OBS Studio's WebSocket server (obs-websocket 5).</summary>
     public ObsConfig Obs { get; set; } = new();
     /// <summary>Discord desktop app (local IPC): the developer application's client id and secret (the secret never goes to the phone).</summary>
@@ -210,6 +211,13 @@ public sealed class DisplayConfig
     public string? PcOffPage { get; set; }
     /// <summary>Seconds without an answer from the computer before the phone shows <see cref="PcOffPage"/>.</summary>
     public int PcOffSec { get; set; } = 30;
+}
+
+/// <summary>PC lighting (Big button › PC lighting) through OpenRGB.</summary>
+public sealed class LightingConfig
+{
+    /// <summary>OpenRGB's program file; empty = look in the usual places (%LOCALAPPDATA%\Programs\OpenRGB, Program Files).</summary>
+    public string? OpenRgbPath { get; set; }
 }
 
 public sealed class LanConfig
@@ -662,6 +670,8 @@ public sealed partial class ConfigStore(string path)
         c.Discord.ClientSecret = string.IsNullOrWhiteSpace(c.Discord.ClientSecret) ? null : c.Discord.ClientSecret.Trim();
         if (string.IsNullOrWhiteSpace(c.Obs.Url)) c.Obs.Url = "ws://127.0.0.1:4455";
         c.HomeAssistant ??= new();
+        c.Lighting ??= new();
+        c.Lighting.OpenRgbPath = string.IsNullOrWhiteSpace(c.Lighting.OpenRgbPath) ? null : c.Lighting.OpenRgbPath.Trim().Trim('"');
         c.HomeAssistant.Url = string.IsNullOrWhiteSpace(c.HomeAssistant.Url) ? null : c.HomeAssistant.Url.Trim().TrimEnd('/');
         c.HomeAssistant.Token = string.IsNullOrWhiteSpace(c.HomeAssistant.Token) ? null : c.HomeAssistant.Token.Trim();
         c.HomeAssistant.PhoneUrl = string.IsNullOrWhiteSpace(c.HomeAssistant.PhoneUrl) ? null : c.HomeAssistant.PhoneUrl.Trim().TrimEnd('/');
