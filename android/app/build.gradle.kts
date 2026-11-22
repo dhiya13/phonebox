@@ -17,8 +17,8 @@ android {
         applicationId = "net.oxog.phonebox.deskpanel"
         minSdk = 21 // Android 5.0; see CONTRIBUTING.md before changing it
         targetSdk = 35
-        versionCode = 57
-        versionName = "0.9.22.14" // this fork: upstream 0.9.22 + build 14
+        versionCode = 58
+        versionName = "0.9.22.15" // this fork: upstream 0.9.22 + build 15
     }
 
     signingConfigs {

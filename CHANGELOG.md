@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.22.15 — 2026-11-22
+
+**Agent**
+- PC lighting switches RGB RAM too. OpenRGB reaches RAM over SMBus through its PawnIO driver, which only serves
+  administrator processes: when a scheduled task named "PhoneBox OpenRGB" exists (created once, with admin consent,
+  set to run OpenRGB `--server` with highest privileges), PhoneBox starts OpenRGB through it and ends it after the
+  switch, so there is no prompt on each tap. Without the task it starts OpenRGB directly, as before.
+
 ## 0.9.22.14 — 2026-11-22
 
 **Agent**

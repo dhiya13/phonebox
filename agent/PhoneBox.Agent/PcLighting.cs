@@ -61,26 +61,37 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
         if (target is not (Rainbow or Dark)) return "unknown lighting mode";
         if (!await _gate.WaitAsync(0, ct)) return "PC lighting is already switching";
         Process? started = null;
+        var viaTask = false;
         try
         {
             if (!await Listening(ct))
             {
-                var exe = FindOpenRgb(cfg.Lighting);
-                if (exe is null) return "OpenRGB is not installed (see Settings › General › PC lighting)";
-                started = Process.Start(new ProcessStartInfo(exe, "--server --noautoconnect --startminimized")
+                // RGB RAM needs OpenRGB with admin rights (its PawnIO driver refuses others): the "PhoneBox OpenRGB"
+                // scheduled task, created once with the user's consent, runs it elevated without a prompt each time
+                if (OperatingSystem.IsWindows() && Schtasks($"/query /tn \"{TaskName}\"") == 0)
                 {
-                    WorkingDirectory = Path.GetDirectoryName(exe)!,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                });
-                var until = DateTime.UtcNow.AddSeconds(20);
+                    viaTask = Schtasks($"/run /tn \"{TaskName}\"") == 0;
+                    if (!viaTask) return "the PhoneBox OpenRGB task did not start";
+                }
+                else
+                {
+                    var exe = FindOpenRgb(cfg.Lighting);
+                    if (exe is null) return "OpenRGB is not installed (see Settings › General › PC lighting)";
+                    started = Process.Start(new ProcessStartInfo(exe, "--server --noautoconnect --startminimized")
+                    {
+                        WorkingDirectory = Path.GetDirectoryName(exe)!,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden,
+                    });
+                }
+                var until = DateTime.UtcNow.AddSeconds(25);
                 while (!await Listening(ct))
                 {
-                    if (DateTime.UtcNow > until || started is null || started.HasExited) return "OpenRGB did not start";
+                    if (DateTime.UtcNow > until || (started is not null && started.HasExited)) return "OpenRGB did not start";
                     await Task.Delay(250, ct);
                 }
-                await Task.Delay(1500, ct); // detection finishes just after the server opens
+                await Task.Delay(viaTask ? 3500 : 1500, ct); // detection (SMBus RAM takes longer) finishes after the server opens
             }
             var applied = await ApplyAsync(target == Rainbow ? RainbowModes : DarkModes, ct);
             if (applied.Count == 0) return "OpenRGB found no lighting to switch";
@@ -95,14 +106,27 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
         }
         finally
         {
-            if (started is { HasExited: false })
-            {
-                await Task.Delay(500, CancellationToken.None); // let the last mode reach the hardware
-                try { started.Kill(entireProcessTree: true); } catch { }
-            }
+            if (started is { HasExited: false } || viaTask) await Task.Delay(500, CancellationToken.None); // let the last mode reach the hardware
+            if (started is { HasExited: false }) { try { started.Kill(entireProcessTree: true); } catch { } }
+            if (viaTask) Schtasks($"/end /tn \"{TaskName}\"");
             started?.Dispose();
             _gate.Release();
         }
+    }
+
+    /// <summary>The scheduled task that runs OpenRGB elevated (for RGB RAM); see docs/GUIDE.md › PC lighting.</summary>
+    public const string TaskName = "PhoneBox OpenRGB";
+
+    private static int Schtasks(string args)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("schtasks.exe", args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true });
+            if (p is null) return -1;
+            p.StandardOutput.ReadToEnd(); p.StandardError.ReadToEnd();
+            return p.WaitForExit(10_000) ? p.ExitCode : -1;
+        }
+        catch { return -1; }
     }
 
     private async Task<bool> Listening(CancellationToken ct)
