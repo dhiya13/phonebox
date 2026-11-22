@@ -127,8 +127,13 @@ Assistant directly whenever the agent does not answer.
   strips), GPU, mouse and whatever else [OpenRGB](https://openrgb.org) supports. Install OpenRGB (the portable zip in
   `%LOCALAPPDATA%\Programs\OpenRGB` is found by itself, or set its path in **Settings › General › PC lighting**).
   PhoneBox starts it hidden for the switch and closes it again; the devices keep the effect. Rainbow uses each
-  device's Rainbow mode, or Spectrum Cycle where it has none; dark is Off. RGB RAM needs OpenRGB's PawnIO driver
-  (installed with admin rights). Other lighting apps (Armoury Crate, SignalRGB, iCUE…) may take the lights back.
+  device's Rainbow mode, or Spectrum Cycle where it has none; dark is Off. Fans and strips on ARGB headers get the
+  length in **LEDs per ARGB header** (120 by default) when OpenRGB has none. Other lighting apps (Armoury Crate,
+  SignalRGB, iCUE…) may take the lights back, so remove them or switch their lighting off.
+  - **RGB RAM** needs OpenRGB with admin rights: install [PawnIO](https://pawnio.eu) (OpenRGB's SMBus driver), then
+    create a scheduled task named **PhoneBox OpenRGB** that runs `OpenRGB.exe --server --noautoconnect --startminimized`
+    "with highest privileges" for your user (Task Scheduler, or `Register-ScheduledTask` from an admin PowerShell).
+    PhoneBox then starts OpenRGB through that task and ends it after each switch, with no prompt.
 
 **Picture** uploads a PNG, WEBP or SVG (up to 512 KB) for the button itself, and **Fill the button with its picture**
 makes it the background. The phone keeps the pictures, so the buttons look the same while the PC is off. A button
