@@ -633,6 +633,7 @@ nav a.on::before { color: var(--accent); }
         <h3 data-i18n="s.lighting.title">PC lighting</h3>
         <p class="hint" style="margin:0 0 12px" data-i18n="s.lighting.hint">For the Big button's PC lighting action (rainbow / dark). PhoneBox uses OpenRGB: it starts it for a moment to switch the lights and closes it again. Leave the path empty to find it in the usual places.</p>
         <div class="field"><label data-i18n="s.lighting.path">OpenRGB program (empty = find it)</label><input type="text" data-bind="lighting.openRgbPath" placeholder="OpenRGB.exe" spellcheck="false"></div>
+        <div class="field" style="max-width:320px"><label data-i18n="s.lighting.argb">LEDs per ARGB header (fans, strips)</label><input type="number" min="1" max="500" data-bind="lighting.argbLeds" data-type="num"><span class="hint" data-i18n="s.lighting.argbHint">For headers OpenRGB has not been told the length of. Too many is fine; the exact count makes the rainbow tighter.</span></div>
       </div>
 
       <div class="card">
