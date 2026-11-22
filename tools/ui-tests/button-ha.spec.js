@@ -63,3 +63,11 @@ test('a shortcut button uses its own picture and label over the shortcut\'s', as
   expect(images).toContain('own:fedcba9876543210');
   expect(images).not.toContain('shortcut');
 });
+
+test('a PC lighting button shows its name and works as an on / off key', async ({ page }) => {
+  const errors = []; page.on('pageerror', (e) => errors.push(String(e)));
+  const { key } = await open(page, [{ options: { action: 'lighting' } }]);
+  await expect(key(0).locator('.k-label')).toHaveText('PC lighting');
+  await expect(key(0)).toHaveClass(/toggle/);
+  expect(errors).toEqual([]);
+});

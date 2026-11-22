@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.22.13 — 2026-11-22
+
+**Panel**
+- Big button › When tapped › **PC lighting**: switches the PC's RGB between **rainbow** and **dark** with one tap,
+  through OpenRGB (motherboard and its ARGB headers, GPU, mouse and whatever else OpenRGB supports). The agent starts
+  OpenRGB only for the switch and closes it again: the devices keep their hardware effect with nothing left running.
+  The button lights up while the PC is on rainbow. OpenRGB's location can be set in Settings › General › PC lighting.
+
 ## 0.9.22.12 — 2026-11-21
 
 **Panel**

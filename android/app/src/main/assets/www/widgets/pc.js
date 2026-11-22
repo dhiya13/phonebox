@@ -333,6 +333,7 @@ W.button = {
   create(box, { o }) {
     const look = { cover: o.cover === true, label: o.showLabel !== false, picture: o.picture || null };
     if (o.action === 'ha') return haButton(box, o, look);
+    if (o.action === 'lighting') return lightingButton(box, o, look);
     if (o.action === 'wol') return wolButton(box, o, look);
     const base = (cfg.shortcuts || []).find((x) => x.id === o.id) || (cfg.shortcuts || [])[0];
     if (!base) { box.append(h('div', 'empty', t('w.pickShortcut'))); return {}; }
@@ -340,6 +341,37 @@ W.button = {
     return { update: () => applyToggles(box) };
   },
 };
+
+// PC lighting: rainbow / dark on the PC's RGB through OpenRGB (the agent starts it for the switch and closes it again).
+// The button is "on" while the PC is set to rainbow.
+function lightingButton(box, o, look) {
+  const s = { id: 'pc-lighting', label: o.label || t('w.button.pcLighting'), icon: o.icon || '🌈', color: o.color || '#a855f7', toggle: true };
+  let b = null;
+  const paint = (state) => { if (b) b.classList.toggle('on', state === 'rainbow'); };
+  const load = async () => {
+    try { paint((await api('/lighting', 'GET', 5000)).state); return true; } catch (_) { return false; }
+  };
+  const tap = async (btn) => {
+    haptic();
+    btn.classList.remove('ok', 'err');
+    btn.classList.add('busy');
+    let err = null, state = null;
+    try {
+      const r = await fetch(`${API}/lighting/toggle`, { method: 'POST', cache: 'no-store', headers: PANEL_HEADERS });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) err = !j.error || j.error === 'offline' ? t('panel.pcNoAnswer') : j.error;
+      else state = j.state;
+    } catch (_) { err = t('panel.pcNoAnswer'); }
+    btn.classList.remove('busy');
+    btn.classList.add(err ? 'err' : 'ok');
+    if (err) toast(err, 'err'); else paint(state);
+    setTimeout(() => btn.classList.remove('ok', 'err'), 900);
+  };
+  b = keyButton(s, { ...look, onTap: tap });
+  box.append(b);
+  const tick = every(15000, load, 30_000);
+  return { update: () => tick() };
+}
 
 function haButton(box, o, look) {
   const entity = String(o.entity || '').trim();

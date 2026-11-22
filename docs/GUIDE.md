@@ -123,6 +123,13 @@ Assistant directly whenever the agent does not answer.
   - Fast Startup can stop wake from a full shutdown on some boards: turn it off in Control Panel › Power Options ›
     Choose what the power buttons do if waking works from sleep but not from shut down.
 
+- **PC lighting**: one tap switches the PC's RGB between rainbow and dark: motherboard and its ARGB headers (fans,
+  strips), GPU, mouse and whatever else [OpenRGB](https://openrgb.org) supports. Install OpenRGB (the portable zip in
+  `%LOCALAPPDATA%\Programs\OpenRGB` is found by itself, or set its path in **Settings › General › PC lighting**).
+  PhoneBox starts it hidden for the switch and closes it again; the devices keep the effect. Rainbow uses each
+  device's Rainbow mode, or Spectrum Cycle where it has none; dark is Off. RGB RAM needs OpenRGB's PawnIO driver
+  (installed with admin rights). Other lighting apps (Armoury Crate, SignalRGB, iCUE…) may take the lights back.
+
 **Picture** uploads a PNG, WEBP or SVG (up to 512 KB) for the button itself, and **Fill the button with its picture**
 makes it the background. The phone keeps the pictures, so the buttons look the same while the PC is off. A button
 set to a shortcut without its own picture uses the shortcut's, as before.

@@ -333,6 +333,8 @@ public class LanTests
     [InlineData("/api/ha/test", false)]
     [InlineData("/api/ha/direct", true)]
     [InlineData("/api/button-picture", true)]
+    [InlineData("/api/lighting", true)]
+    [InlineData("/api/lighting/toggle", true)]
     [InlineData("/api/settings/button-picture", false)]
     [InlineData("/api/ha/direct/x", false)]
     [InlineData("/api/ha/entities", false)]

@@ -630,6 +630,12 @@ nav a.on::before { color: var(--accent); }
       </div>
 
       <div class="card">
+        <h3 data-i18n="s.lighting.title">PC lighting</h3>
+        <p class="hint" style="margin:0 0 12px" data-i18n="s.lighting.hint">For the Big button's PC lighting action (rainbow / dark). PhoneBox uses OpenRGB: it starts it for a moment to switch the lights and closes it again. Leave the path empty to find it in the usual places.</p>
+        <div class="field"><label data-i18n="s.lighting.path">OpenRGB program (empty = find it)</label><input type="text" data-bind="lighting.openRgbPath" placeholder="OpenRGB.exe" spellcheck="false"></div>
+      </div>
+
+      <div class="card">
         <h3 data-i18n="s.discord.title">Discord</h3>
         <div class="row" style="margin-bottom:8px"><label class="switch"><input type="checkbox" data-bind="discord.enabled"><span></span></label> <span data-i18n="s.discord.enable">Connect to the Discord app on this PC (for the Discord widget)</span></div>
         <p class="hint" style="margin:0 0 12px" data-i18n="s.discord.hint">Create an application at discord.com/developers/applications, add the redirect http://127.0.0.1 under OAuth2, and copy its client ID and secret here. Discord asks you to approve PhoneBox once. If it refuses the login, add your account under the application's App Testers. Step by step: docs/DISCORD.md.</p>
@@ -1855,16 +1861,22 @@ function optionField(w, o, onValChange) {
 // colour fall back to the shortcut's (or, for Home Assistant, the entity's name); the picture is the button's own upload.
 function buttonActionEditor(w, set) {
   const o = () => w.options || {};
-  const ha = o().action === 'ha', wol = o().action === 'wol';
+  const ha = o().action === 'ha', wol = o().action === 'wol', lighting = o().action === 'lighting';
   const box = h('div', { class: 'card', style: { padding: '10px 12px', margin: '0 0 12px' } });
   const pick = (val) => { set('action', val); renderInspector(); };
   box.append(h('div', { class: 'field' }, h('label', {}, t('s.btn.action')),
     h('div', { class: 'row', style: { gap: '6px' } },
-      h('button', { class: 'btn sm' + (ha || wol ? '' : ' primary'), type: 'button', onclick: () => pick('shortcut') }, t('s.btn.shortcut')),
+      h('button', { class: 'btn sm' + (ha || wol || lighting ? '' : ' primary'), type: 'button', onclick: () => pick('shortcut') }, t('s.btn.shortcut')),
       h('button', { class: 'btn sm' + (ha ? ' primary' : ''), type: 'button', onclick: () => pick('ha') }, t('s.btn.ha')),
-      h('button', { class: 'btn sm' + (wol ? ' primary' : ''), type: 'button', onclick: () => pick('wol') }, t('s.btn.wol')))));
+      h('button', { class: 'btn sm' + (wol ? ' primary' : ''), type: 'button', onclick: () => pick('wol') }, t('s.btn.wol')),
+      h('button', { class: 'btn sm' + (lighting ? ' primary' : ''), type: 'button', onclick: () => pick('lighting') }, t('s.btn.lighting')))));
   const shortcut = cfg.shortcuts.find((s) => s.id === o().id) || cfg.shortcuts[0];
-  if (wol) {
+  if (lighting) {
+    // whether this computer has OpenRGB, which does the switching
+    const hint = h('span', { class: 'hint' }, t('s.btn.lightingHint'));
+    fetch('/api/lighting').then((r) => r.json()).then((j) => { if (!j.installed) hint.textContent = t('s.btn.lightingMissing'); }).catch(() => {});
+    box.append(hint);
+  } else if (wol) {
     // the adapter the phone will wake, as this computer sees it now
     const hint = h('span', { class: 'hint' }, '…');
     fetch('/api/wol').then((r) => r.json()).then((j) => {
@@ -1883,13 +1895,13 @@ function buttonActionEditor(w, set) {
         onchange: (e) => set('entity', e.target.value.trim()) }), list,
       h('span', { class: 'hint' }, cfg.homeAssistant?.url ? t('s.btn.entityHint') : t('s.btn.haNotSet'))));
   }
-  const fallback = wol ? t('w.button.wakePc') : ha ? '' : (shortcut?.label || '');
+  const fallback = lighting ? t('w.button.pcLighting') : wol ? t('w.button.wakePc') : ha ? '' : (shortcut?.label || '');
   box.append(h('div', { class: 'row', style: { gap: '8px', alignItems: 'flex-end' } },
     h('div', { class: 'field', style: { flex: '2' } }, h('label', {}, t('s.btn.label')),
       h('input', { type: 'text', value: o().label || '', maxlength: 60, placeholder: fallback || t('s.btn.labelAuto'), oninput: (e) => set('label', e.target.value) })),
     h('div', { class: 'field', style: { flex: '1' } }, h('label', {}, t('s.btn.icon')),
-      h('input', { type: 'text', value: o().icon || '', maxlength: 16, placeholder: wol ? '🖥️' : ha ? '' : (shortcut?.icon || ''), oninput: (e) => set('icon', e.target.value.trim()) }))));
-  const colour = h('input', { type: 'color', value: o().color || (wol ? '#22c55e' : ha ? '#14b8a6' : shortcut?.color || '#6b7280'), oninput: (e) => set('color', e.target.value) });
+      h('input', { type: 'text', value: o().icon || '', maxlength: 16, placeholder: lighting ? '🌈' : wol ? '🖥️' : ha ? '' : (shortcut?.icon || ''), oninput: (e) => set('icon', e.target.value.trim()) }))));
+  const colour = h('input', { type: 'color', value: o().color || (lighting ? '#a855f7' : wol ? '#22c55e' : ha ? '#14b8a6' : shortcut?.color || '#6b7280'), oninput: (e) => set('color', e.target.value) });
   box.append(h('div', { class: 'field' }, h('label', {}, t('s.btn.color')),
     h('div', { class: 'row', style: { gap: '8px' } }, colour,
       h('div', { class: 'swatches' }, ...COLORS.map((c) => h('button', { type: 'button', style: { background: c }, onclick: () => { set('color', c); renderInspector(); } }))),
@@ -2345,7 +2357,7 @@ const RULE_PRESETS = [
 let activeRules = [];
 
 function renderRules() {
-  cfg.rules ??= []; cfg.calendars ??= []; cfg.feeds ??= []; cfg.cameras ??= { ffmpeg: '', sources: [] }; cfg.photos ??= { folder: '', subfolders: true }; cfg.console ??= { profiles: [] }; cfg.phones ??= []; cfg.homeAssistant ??= {}; cfg.obs ??= { enabled: false, url: 'ws://127.0.0.1:4455' }; cfg.discord ??= { enabled: false };
+  cfg.rules ??= []; cfg.calendars ??= []; cfg.feeds ??= []; cfg.cameras ??= { ffmpeg: '', sources: [] }; cfg.photos ??= { folder: '', subfolders: true }; cfg.console ??= { profiles: [] }; cfg.phones ??= []; cfg.homeAssistant ??= {}; cfg.lighting ??= {}; cfg.obs ??= { enabled: false, url: 'ws://127.0.0.1:4455' }; cfg.discord ??= { enabled: false };
   $('rulePresets').replaceChildren(...RULE_PRESETS.map(([label, make]) => h('button', { class: 'btn', onclick: () => {
     cfg.rules.push({ id: '', enabled: true, ...make() });
     renderRules(); changed();
