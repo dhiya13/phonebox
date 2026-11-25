@@ -976,6 +976,19 @@ app.MapDelete("/api/settings/shortcut-icon", (string id, HttpRequest req, Config
 
 app.Lifetime.ApplicationStarted.Register(() =>
     app.Logger.LogInformation("PhoneBox agent {Version} ready on http://127.0.0.1:{Port} (config: {Path})", AppPaths.Version, Port, configPath));
+// PC lighting: RGB RAM comes back in its rainbow default at every power-on, so the last state switched to from the
+// phone is applied again shortly after the agent starts (it starts at login), once the session has settled.
+app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+{
+    var stop = app.Lifetime.ApplicationStopping;
+    try
+    {
+        await Task.Delay(TimeSpan.FromSeconds(20), stop);
+        await app.Services.GetRequiredService<PcLighting>().RestoreAsync(TimeSpan.FromSeconds(60), stop);
+    }
+    catch (OperationCanceledException) { }
+    catch (Exception ex) { app.Logger.LogWarning("pc lighting: restore failed: {Msg}", ex.Message); }
+}));
 
 app.Run();
 

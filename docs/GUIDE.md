@@ -134,6 +134,9 @@ Assistant directly whenever the agent does not answer.
     create a scheduled task named **PhoneBox OpenRGB** that runs `OpenRGB.exe --server --noautoconnect --startminimized`
     "with highest privileges" for your user (Task Scheduler, or `Register-ScheduledTask` from an admin PowerShell).
     PhoneBox then starts OpenRGB through that task and ends it after each switch, with no prompt.
+  - **After a restart** RGB RAM comes back in its rainbow default (it can't store a mode), so about 20 seconds after
+    the agent starts PhoneBox switches to the last state chosen from the phone again. Devices that can store a mode
+    (such as ASUS boards) are told to on every switch.
 
 **Picture** uploads a PNG, WEBP or SVG (up to 512 KB) for the button itself, and **Fill the button with its picture**
 makes it the background. The phone keeps the pictures, so the buttons look the same while the PC is off. A button
