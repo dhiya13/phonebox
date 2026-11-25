@@ -29,6 +29,7 @@ public sealed class PcLightingTests : IDisposable
         private readonly TcpListener _l = new(IPAddress.Loopback, 0);
         public readonly List<(uint Dev, int Mode)> Updates = [];
         public readonly List<(uint Dev, int Zone, int Size)> Resizes = [];
+        public readonly List<(uint Dev, int Mode)> Saves = [];
         private readonly (string Name, string[] Modes)[] _devices;
         public int Port => ((IPEndPoint)_l.LocalEndpoint).Port;
         public FakeOpenRgb(params (string, string[])[] devices) { _devices = devices; _l.Start(); _ = Task.Run(Serve); }
@@ -59,6 +60,7 @@ public sealed class PcLightingTests : IDisposable
                                 _ => null,
                             };
                             if (id == 1101) lock (Updates) Updates.Add((dev, BitConverter.ToInt32(data, 4)));
+                            if (id == 1102) lock (Updates) Saves.Add((dev, BitConverter.ToInt32(data, 4)));
                             if (id == 1000) lock (Updates) Resizes.Add((dev, BitConverter.ToInt32(data, 0), BitConverter.ToInt32(data, 4)));
                             if (reply is null) continue;
                             var o = new byte[16]; "ORGB"u8.CopyTo(o); BitConverter.GetBytes(dev).CopyTo(o, 4); BitConverter.GetBytes(id).CopyTo(o, 8); BitConverter.GetBytes((uint)reply.Length).CopyTo(o, 12);
@@ -79,9 +81,11 @@ public sealed class PcLightingTests : IDisposable
             void Str(string v) { var x = Encoding.UTF8.GetBytes(v + "\0"); U16((ushort)x.Length); b.AddRange(x); }
             I32(0); Str(name); Str("vendor"); Str("desc"); Str("1"); Str("serial"); Str("loc");
             U16((ushort)modes.Length); I32(0);
+            // like the ASUS board, "Board" can keep its mode in its own memory (SAVEMODE); the others can't
+            var flags = name == "Board" ? OpenRgbController.Mode.FlagManualSave : 0u;
             foreach (var m in modes)
             {
-                Str(m); I32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0);
+                Str(m); I32(0); U32(flags); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0); U32(0);
                 U16(1); U32(0xff0000); // one colour
             }
             // zones: a fixed one, and (on the board) an addressable header nobody has sized yet
@@ -121,6 +125,42 @@ public sealed class PcLightingTests : IDisposable
         Assert.Equal("dark", light.State);
         await Task.Delay(200);
         lock (fake.Updates) Assert.Equal([(0u, 0), (1u, 1), (2u, 0)], fake.Updates.ToArray()); // Off everywhere
+        // only the board can keep a mode in its own memory, and it is told to each time
+        lock (fake.Updates) Assert.Equal([(1u, 4), (1u, 1)], fake.Saves.ToArray());
+    }
+
+    [Fact]
+    public async Task Restore_ReappliesTheLastStateAfterAStart()
+    {
+        using var fake = new FakeOpenRgb(Devices);
+        File.WriteAllText(_state, "dark"); // switched to dark before the restart
+        var light = new PcLighting(Config(withButton: true), NullLogger<PcLighting>.Instance, _state, fake.Port);
+        Assert.Null(await light.RestoreAsync(TimeSpan.Zero));
+        await Task.Delay(200);
+        lock (fake.Updates) Assert.Equal([(0u, 0), (1u, 1), (2u, 0)], fake.Updates.ToArray()); // Off again everywhere
+        Assert.Equal("dark", light.State);
+    }
+
+    [Fact]
+    public async Task Restore_DoesNothingWhenNeverSwitched()
+    {
+        using var fake = new FakeOpenRgb(Devices);
+        var light = new PcLighting(Config(withButton: true), NullLogger<PcLighting>.Instance, _state, fake.Port);
+        Assert.Null(await light.RestoreAsync(TimeSpan.Zero));
+        await Task.Delay(200);
+        lock (fake.Updates) Assert.Empty(fake.Updates);
+        Assert.Null(light.State);
+    }
+
+    [Fact]
+    public async Task Restore_DoesNothingWithoutABigButton()
+    {
+        using var fake = new FakeOpenRgb(Devices);
+        File.WriteAllText(_state, "dark");
+        var light = new PcLighting(Config(withButton: false), NullLogger<PcLighting>.Instance, _state, fake.Port);
+        Assert.Null(await light.RestoreAsync(TimeSpan.Zero));
+        await Task.Delay(200);
+        lock (fake.Updates) Assert.Empty(fake.Updates);
     }
 
     [Fact]
@@ -152,6 +192,10 @@ public sealed class PcLightingTests : IDisposable
         Assert.Equal([("Mainboard", 4u), ("ARGB Header 1", 0u)], zones.Select(z => (z.Name, z.Count)));
         Assert.Equal(["Direct", "Rainbow"], modes.Select(m => m.Name));
         Assert.All(modes, m => Assert.True(m.Raw.Length > 50));
+        Assert.All(modes, m => Assert.True(m.ManualSave)); // the board's modes carry the manual-save flag
+        var gpu = typeof(FakeOpenRgb).GetMethod("Controller", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, ["GPU", new[] { "Off" }]) as byte[];
+        Assert.False(OpenRgbController.Parse(gpu!, 4).Modes[0].ManualSave);
     }
 
     [Fact]

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.22.16 — 2026-11-25
+
+**Agent**
+- PC lighting stays the way it was switched after a restart. RGB RAM (ENE controllers, such as G.Skill Trident Z RGB)
+  forgets its mode at every power-on and comes back in its rainbow default, and OpenRGB can't store a mode on it. So
+  about 20 seconds after the agent starts (it starts at login), PhoneBox applies the state last switched to from the
+  phone again, with one retry a minute later; nothing happens when the lighting was never switched or no Big button
+  is set to PC lighting. Devices that can keep a mode in their own memory (OpenRGB's manual-save modes, such as ASUS
+  boards) are now also told to save it on every switch, so they keep it without PhoneBox.
+
 ## 0.9.22.15 — 2026-11-22
 
 **Agent**

@@ -114,6 +114,24 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
         }
     }
 
+    /// <summary>
+    /// After the agent starts (at login): re-applies the state last switched to, because RGB RAM forgets its mode at
+    /// every power-on and comes back in its rainbow default. Does nothing when the lighting was never switched from
+    /// PhoneBox, or no Big button is set to PC lighting any more. One retry, for a driver that isn't ready yet.
+    /// </summary>
+    public async Task<string?> RestoreAsync(TimeSpan retryAfter, CancellationToken ct = default)
+    {
+        if (State is not { } last || !Allowed(config.Get())) return null;
+        var error = await SetAsync(last, ct);
+        if (error is null) { log.LogInformation("pc lighting: restored {Mode} after start", last); return null; }
+        log.LogWarning("pc lighting: restoring {Mode} failed ({Error}), trying again", last, error);
+        await Task.Delay(retryAfter, ct);
+        error = await SetAsync(last, ct);
+        if (error is null) log.LogInformation("pc lighting: restored {Mode} after start", last);
+        else log.LogWarning("pc lighting: restoring {Mode} failed: {Error}", last, error);
+        return error;
+    }
+
     /// <summary>The scheduled task that runs OpenRGB elevated (for RGB RAM); see docs/GUIDE.md › PC lighting.</summary>
     public const string TaskName = "PhoneBox OpenRGB";
 
@@ -180,7 +198,11 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
             BitConverter.GetBytes((uint)data.Length).CopyTo(data, 0);
             body.CopyTo(data, 4);
             await Send(s, i, 1101, data, ct); // RGBCONTROLLER_UPDATEMODE
-            done.Add($"{name} → {modes[pick].Name}");
+            // A device that can keep the mode in its own memory (the ASUS board) is told to, so it comes back that way
+            // after a restart without PhoneBox. Others (ENE RGB RAM) forget it at power-on: RestoreAsync re-applies it.
+            var saved = proto >= 3 && modes[pick].ManualSave;
+            if (saved) await Send(s, i, 1102, data, ct); // RGBCONTROLLER_SAVEMODE
+            done.Add($"{name} → {modes[pick].Name}{(saved ? " (saved)" : "")}");
         }
         return done;
     }
@@ -211,7 +233,12 @@ public sealed class PcLighting(ConfigStore config, ILogger<PcLighting> log, stri
 /// <summary>The part of an OpenRGB controller description PhoneBox needs: its name and modes (each with its raw bytes, sent back to pick it).</summary>
 public static class OpenRgbController
 {
-    public sealed record Mode(string Name, byte[] Raw);
+    /// <summary>A mode; <see cref="ManualSave"/>: the device can keep it in its own memory through SAVEMODE.</summary>
+    public sealed record Mode(string Name, byte[] Raw, uint Flags = 0)
+    {
+        public const uint FlagManualSave = 1 << 8; // OpenRGB MODE_FLAG_MANUAL_SAVE
+        public bool ManualSave => (Flags & FlagManualSave) != 0;
+    }
     public sealed record Zone(string Name, uint Min, uint Max, uint Count);
 
     public static (string Name, List<Mode> Modes, List<Zone> Zones) Parse(byte[] d, uint proto)
@@ -231,14 +258,16 @@ public static class OpenRgbController
         {
             var start = o;
             var mn = Str();
-            o += 4 * 4; // value, flags, speed min, speed max
+            o += 4; // value
+            var flags = BitConverter.ToUInt32(d, o);
+            o += 4 * 3; // flags, speed min, speed max
             if (proto >= 3) o += 4 * 2; // brightness min, max
             o += 4 * 3; // colors min, max, speed
             if (proto >= 3) o += 4; // brightness
             o += 4 * 2; // direction, color mode
             var colors = U16();
             o += 4 * colors;
-            modes.Add(new Mode(mn, d[start..o]));
+            modes.Add(new Mode(mn, d[start..o], flags));
         }
         var zones = new List<Zone>();
         uint U32() { var v = BitConverter.ToUInt32(d, o); o += 4; return v; }
