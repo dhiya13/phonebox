@@ -656,9 +656,9 @@ W.agenda = {
         const dk = dayKey(at);
         if (dk !== lastDay) { rows.push(h('div', 'ag-day', dayName(at))); lastDay = dk; }
         const isNow = e === cur;
+        // the calendar colour is a thin bar on the row's edge (CSS), so the title gets the width a dot column took
         const row = h('div', 'ag-row' + (isNow ? ' now' : ''),
-          h('span', 'ag-dot'),
-          h('span', 'ag-time', e.allDay ? 'all day' : hm(e.start)),
+          h('span', 'ag-time' + (e.allDay ? ' allday' : ''), e.allDay ? 'all day' : hm(e.start)),
           h('span', 'ag-title', e.title, o.location !== false && e.location ? h('small', null, ' · ' + e.location) : null),
           h('span', 'ag-when', isNow ? `until ${hm(e.end)}` : e === next ? inMin(e.start) : ''));
         row.style.setProperty('--c', e.color);

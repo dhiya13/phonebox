@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.22.17 — 2026-11-25
+
+**Panel**
+- Agenda rows give the title more room: the calendar colour is a thin bar on the row's left edge instead of a dot in
+  its own column, and the time column is only as wide as the time (smaller, 12px), so titles start about 33px
+  earlier. 24-hour times keep one width, so titles still line up.
+
 ## 0.9.22.16 — 2026-11-25
 
 **Agent**

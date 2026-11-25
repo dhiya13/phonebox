@@ -907,11 +907,14 @@ html.beat-4 .obs-pill.on .obs-led { box-shadow: 0 0 34px rgba(239, 68, 68, .9); 
 .ag-list > *, .dk-list > * { flex-shrink: 0; }
 .ag-day { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
 .ag-day:first-child { margin-top: 0; }
-.ag-row { position: relative; display: grid; grid-template-columns: 8px 54px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; font-size: 14px; overflow: hidden; }
+/* Compact: the calendar colour is a 3px bar inside the left padding (no dot column), and the time column is only as
+   wide as the time ("18:00" fits the minimum, so 24-hour rows line up), leaving the rest to the title. */
+.ag-row { position: relative; display: grid; grid-template-columns: minmax(2.6em, max-content) minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border-radius: 8px; font-size: 14px; overflow: hidden; }
+.ag-row::before { content: ''; position: absolute; left: 3px; top: 5px; bottom: 5px; width: 3px; border-radius: 2px; background: var(--c); }
 .ag-row.now { background: color-mix(in srgb, var(--c) 18%, transparent); }
 .ag-row.now::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: calc(var(--p, 0) * 100%); background: var(--c); }
-.ag-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
-.ag-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.ag-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.ag-time.allday { font-size: 10px; line-height: 1.1; }
 .ag-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ag-title small { color: var(--muted); font-size: 12px; }
 .ag-when { color: var(--c); font-size: 12px; font-weight: 600; white-space: nowrap; }
