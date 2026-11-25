@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.22.18 — 2026-11-25
+
+**Panel**
+- The night screen's clock roams the whole screen, whether or not pixel shift is on: every minute the clock and date
+  fade out, jump to a new random spot (kept fully on screen and well away from the last one) and fade back in. It
+  used to drift ±4 % only with pixel shift on, and without it sat on the same pixels for a whole idle day, which left
+  a burn-in mark.
+
 ## 0.9.22.17 — 2026-11-25
 
 **Panel**

@@ -1988,11 +1988,11 @@ window.onAndroidSensor = (kind, value) => {
 
 // ---------------------------------------------------------------- OLED burn-in protection
 // Pixel shift (display.pixelShift): every 2 minutes the panel steps along a small loop, at most 2 px from its place, so
-// edges and text don't sit on the same pixels all day; the night clock, the most static thing on screen, drifts further.
+// edges and text don't sit on the same pixels all day. The night clock, the most static thing on screen and often on
+// for a whole idle day, roams the whole screen whether or not pixel shift is on (roamNight).
 // Idle dim (display.idleDimMin): after that many minutes without a touch, page switch, notification or prompt, a dark
 // layer covers the panel. Like waking the night screen, the touch that brightens it does nothing else.
 const SHIFT = [[0, 0], [1, 0], [2, 1], [1, 2], [0, 2], [-1, 1], [-2, 0], [-1, -1], [0, -2], [1, -1]];
-const NIGHT_SHIFT = [[0, 0], [4, -3], [-4, 3], [3, 4], [-4, -2], [2, -4], [-2, 2], [4, 1], [-3, -4], [1, 3]]; // vmin
 const SHIFT_MS = 120_000;
 let shiftStep = -1;
 let lastWake = Date.now();
@@ -2028,12 +2028,9 @@ export function applyBurnIn() {
   if (step !== shiftStep) {
     shiftStep = step;
     const [x, y] = step < 0 ? [0, 0] : SHIFT[step];
-    const [nx, ny] = step < 0 ? [0, 0] : NIGHT_SHIFT[step];
     const root = document.documentElement.style;
     root.setProperty('--shift-x', `${x}px`);
     root.setProperty('--shift-y', `${y}px`);
-    root.setProperty('--night-x', `${nx}vmin`);
-    root.setProperty('--night-y', `${ny}vmin`);
   }
   const after = Math.max(0, Math.floor(+d.idleDimMin || 0)) * 60_000;
   const dim = after > 0 && !PREVIEW && !nightOn && $('approval').hidden
@@ -2046,6 +2043,35 @@ export function applyBurnIn() {
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) undim(); }); // woken on plug-in, back from another app
 
+// Night clock roaming: every minute the clock and date fade out, jump to a new random spot anywhere on the screen (kept
+// fully on it, and well away from the last spot), and fade back in, so a whole idle day lights pixels all over the
+// panel instead of one patch. A night screen that comes on starts at a random spot of its own.
+export const ROAM_MS = 60_000;
+let roamAt = 0;
+let roamPos = [0, 0];
+export function roamNight(now = Date.now()) {
+  if (!nightOn || PREVIEW) { roamAt = 0; return; }
+  if (roamAt && now < roamAt) return;
+  const first = !roamAt;
+  roamAt = now + ROAM_MS;
+  const night = $('night');
+  const kids = [...night.children];
+  const w = Math.max(...kids.map((k) => k.offsetWidth));
+  const hgt = kids.reduce((s, k) => s + k.offsetHeight, 0) + 8;
+  const rx = Math.max(0, (window.innerWidth - w) / 2 - 8), ry = Math.max(0, (window.innerHeight - hgt) / 2 - 8);
+  let x = 0, y = 0;
+  for (let i = 0; i < 12; i++) { // far enough from the last spot that the digits mostly land on other pixels
+    x = Math.round((Math.random() * 2 - 1) * rx);
+    y = Math.round((Math.random() * 2 - 1) * ry);
+    if (Math.hypot(x - roamPos[0], y - roamPos[1]) >= 0.5 * Math.hypot(rx, ry)) break;
+  }
+  roamPos = [x, y];
+  const place = () => { night.style.setProperty('--roam-x', `${x}px`); night.style.setProperty('--roam-y', `${y}px`); };
+  if (first) { place(); return; }
+  night.classList.add('roam-out');
+  setTimeout(() => { place(); night.classList.remove('roam-out'); }, 900);
+}
+
 export function tick() {
   if (lastHour12 !== null && hour12() !== lastHour12) { buildLayout(); renderRulesBtn(); }
   const now = new Date();
@@ -2054,6 +2080,7 @@ export function tick() {
   if (darkSince && Date.now() - darkSince > 30_000) darkRoom = true;
   const dark = darkRoom && cfg.display?.nightWhenDark === true;
   setNight((isNight(now) || dark || idleNight()) && Date.now() > wakeUntil);
+  roamNight();
   if (!PREVIEW && idleDue() && !navQueue.some((r) => r.kind === 'home')) {
     if (curPage === homeIndex()) { closeSheet(); closeOverview(); lastNav = Date.now(); } // only a sheet to close
     else { navQueue.push({ kind: 'home', at: Date.now(), priority: -1 }); pump(); }
