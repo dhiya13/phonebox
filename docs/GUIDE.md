@@ -13,10 +13,12 @@ Existing layouts keep their original appearance. See the [appearance guide](APPE
 
 **OLED burn-in protection** (since 0.9.9), under **Settings → General → OLED burn-in protection**:
 
-- move the panel by a few pixels every 2 minutes (and the night clock around the screen);
+- move the panel by a few pixels every 2 minutes;
 - dim the panel after a set time without a touch. The touch that brightens it again does not press anything.
 
-The AMOLED black theme and the night screen help too.
+The AMOLED black theme and the night screen help too. The night screen's clock roams the whole screen on its own
+(whether or not pixel shift is on): every minute it fades out and comes back somewhere else, so a panel left idle all
+day doesn't keep one patch of pixels lit.
 
 ## Control Deck
 

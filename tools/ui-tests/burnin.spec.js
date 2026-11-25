@@ -49,6 +49,42 @@ test('pixel shift moves the panel to its next position every 2 minutes', async (
   expect(Math.max(x, y)).toBeLessThanOrEqual(2);
 });
 
+// The night clock roams the whole screen, with or without pixel shift: a new spot every minute, far apart, always fully
+// on screen (it used to drift ±4 % only with pixel shift on, and sat still all day without it).
+test('the night clock roams the whole screen and stays on it', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/panel/style.css');
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('pb-demo-config', JSON.stringify({
+      // a night window covering the whole day (the demo's music and waiting session would hold off the idle one)
+      night: { enabled: true, start: '00:00', end: '23:59' }, rules: [], shortcuts: [], display: { idleReturnSec: 0 },
+      pages: [{ id: 'one', title: 'One', widgets: [{ id: 'n1', type: 'note', x: 0, y: 0, w: 12, h: 6, options: { text: 'Page one' } }] }],
+    }));
+  });
+  await page.goto('/panel/');
+  await page.clock.fastForward(2_000);
+  await expect(page.locator('body')).toHaveClass(/night/);
+  await expect(page.locator('#nClock')).toBeVisible();
+
+  const vp = page.viewportSize();
+  const spots = [];
+  for (let i = 0; i < 6; i++) {
+    await page.clock.fastForward(61_000); // next spot
+    await page.clock.fastForward(1_000); // the fade-out, jump and fade-in finished
+    const box = await page.locator('#nClock').boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(vp.width + 0.5);
+    expect(box.y + box.height).toBeLessThanOrEqual(vp.height + 0.5);
+    spots.push([box.x + box.width / 2, box.y + box.height / 2]);
+  }
+  // it really moves around: consecutive spots are well apart, and together they cover much of the screen
+  for (let i = 1; i < spots.length; i++) expect(Math.hypot(spots[i][0] - spots[i - 1][0], spots[i][1] - spots[i - 1][1])).toBeGreaterThan(40);
+  const xs = spots.map((s) => s[0]);
+  expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(vp.width * 0.2);
+});
+
 test('idle dim covers the panel, and the touch that wakes it presses nothing', async ({ page }) => {
   await show(page, { idleDimMin: 1 });
   await expect(page.locator('body')).not.toHaveClass(/dimmed/);

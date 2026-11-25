@@ -1043,10 +1043,12 @@ html.beat-4 .w-onair.on .oa-sign { box-shadow: 0 0 34px rgba(239, 68, 68, .9); }
 #night { position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 30; background: #000; display: none; flex-direction: column; align-items: center; justify-content: center; color: #4a3a33; }
 body.night #night { display: flex; }
 
-/* OLED burn-in protection (Settings › Display): with pixel shift the panel steps a few pixels every 2 minutes and the
-   night clock drifts; with idle dim a dark layer covers the panel until it is touched. */
+/* OLED burn-in protection (Settings › Display): with pixel shift the panel steps a few pixels every 2 minutes; the
+   night clock roams the whole screen (main.js roamNight: fade out, jump, fade in); with idle dim a dark layer covers
+   the panel until it is touched. */
 body.shifted { transform: translate(var(--shift-x, 0px), var(--shift-y, 0px)); transition: transform 2s ease; }
-body.shifted #night > * { transform: translate(var(--night-x, 0), var(--night-y, 0)); transition: transform 3s ease; }
+#night > * { transform: translate(var(--roam-x, 0px), var(--roam-y, 0px)); transition: opacity .8s ease; }
+#night.roam-out > * { opacity: 0; }
 body::after { content: ""; position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 85; background: #000; opacity: 0; pointer-events: none; transition: opacity 1.5s ease; }
 body.dimmed::after { opacity: .65; pointer-events: auto; }
 body.waking::after { opacity: 0; pointer-events: auto; transition: opacity .2s ease; }
