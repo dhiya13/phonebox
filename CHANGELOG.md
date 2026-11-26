@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.22.19 — 2026-11-26
+
+**Panel**
+- The tap that wakes the night screen only wakes it. The night screen hides on the first touch, and on a touchscreen
+  the click that follows a tap goes to whatever is under the finger when it lifts, so it pressed the button under
+  the clock. That touch is now caught until the finger lifts, as idle dim already did.
+
 ## 0.9.22.18 — 2026-11-25
 
 **Panel**

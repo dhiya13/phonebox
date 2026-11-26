@@ -1904,7 +1904,9 @@ window.onAndroidBack = () => {
 window.addEventListener('resize', () => { buildLayout(); goPage(curPage, true); });
 
 ['pointerdown', 'touchstart'].forEach((ev) => document.addEventListener(ev, (e) => {
-  if (dimmed) wakeFromDim();
+  // The touch that wakes a dimmed panel or the night screen only wakes it: the night screen hides on this touch, so
+  // without the guard the rest of the tap (lift, click) would press whatever button was under the clock.
+  if (dimmed || nightOn) wakeFromDim();
   if (e.target?.closest?.('#navCard, #navChip')) return;
   lastTouch = lastUserTouch = Date.now();
   if (navQueue.length) { navQueue = navQueue.filter((r) => r.kind !== 'home'); pump(); }
@@ -1991,7 +1993,8 @@ window.onAndroidSensor = (kind, value) => {
 // edges and text don't sit on the same pixels all day. The night clock, the most static thing on screen and often on
 // for a whole idle day, roams the whole screen whether or not pixel shift is on (roamNight).
 // Idle dim (display.idleDimMin): after that many minutes without a touch, page switch, notification or prompt, a dark
-// layer covers the panel. Like waking the night screen, the touch that brightens it does nothing else.
+// layer covers the panel. Like waking the night screen, the touch that brightens it does nothing else (wakeFromDim
+// guards both).
 const SHIFT = [[0, 0], [1, 0], [2, 1], [1, 2], [0, 2], [-1, 1], [-2, 0], [-1, -1], [0, -2], [1, -1]];
 const SHIFT_MS = 120_000;
 let shiftStep = -1;
@@ -2006,7 +2009,8 @@ export function undim() {
   document.body.classList.remove('dimmed');
 }
 
-// The dark layer keeps catching this touch until the finger lifts, so the widget under it is not pressed.
+// The dark layer keeps catching this touch until the finger lifts, so the widget under it is not pressed. Also used
+// for the touch that wakes the night screen, which is gone before the finger lifts.
 function wakeFromDim() {
   const body = document.body.classList;
   body.add('waking');
