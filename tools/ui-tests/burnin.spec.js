@@ -85,6 +85,43 @@ test('the night clock roams the whole screen and stays on it', async ({ page }) 
   expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(vp.width * 0.2);
 });
 
+// The night screen hides on the touch that wakes it; the rest of that tap must not land on the panel underneath. A
+// touchscreen tap (not a mouse click) is what showed it: the click after a tap goes to whatever is under the finger
+// when it lifts, and by then the clock is gone.
+test('the touch that wakes the night screen presses nothing', async ({ browser, baseURL }) => {
+  const ctx = await browser.newContext({ baseURL, viewport: { width: 780, height: 360 }, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.clock.install();
+  await page.goto('/panel/style.css');
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('pb-demo-config', JSON.stringify({
+      night: { enabled: true, start: '00:00', end: '23:59' }, rules: [], shortcuts: [], display: { idleReturnSec: 0 },
+      pages: [
+        { id: 'one', title: 'One', widgets: [{ id: 'n1', type: 'note', x: 0, y: 0, w: 12, h: 6, options: { text: 'Page one' } }] },
+        { id: 'two', title: 'Two', widgets: [{ id: 'n2', type: 'note', x: 0, y: 0, w: 12, h: 6, options: { text: 'Page two' } }] },
+      ],
+    }));
+  });
+  await page.goto('/panel/');
+  await page.clock.fastForward(2_000);
+  await expect(page.locator('body')).toHaveClass(/night/);
+
+  // A tap where the page controls are (dots, pause button) only wakes the night screen: its click reaches no button ...
+  const spot = await page.locator('#dots').evaluate((el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.evaluate(() => { window.pressed = []; document.addEventListener('click', (e) => { const b = e.target.closest('button, #dots i, .w'); if (b) window.pressed.push(b.tagName); }, true); });
+  await page.touchscreen.tap(spot.x, spot.y);
+  await expect(page.locator('body')).not.toHaveClass(/night/);
+  await page.clock.fastForward(1_000);
+  expect(await page.evaluate(() => window.pressed)).toEqual([]);
+  await expect(page.locator('#overview')).toBeHidden();
+
+  // ... and the next tap on the same spot works as usual
+  await page.touchscreen.tap(spot.x, spot.y);
+  await expect.poll(() => page.evaluate(() => window.pressed.length)).toBeGreaterThan(0);
+  await ctx.close();
+});
+
 test('idle dim covers the panel, and the touch that wakes it presses nothing', async ({ page }) => {
   await show(page, { idleDimMin: 1 });
   await expect(page.locator('body')).not.toHaveClass(/dimmed/);
