@@ -21,6 +21,16 @@ let autoWanted = false;
 const readState = () => { try { return JSON.parse(bridge.webcamState() || '{}'); } catch (_) { return {}; } };
 const camOn = (s, key) => (!key || s.widget === key) && (s.state === 'starting' || s.state === 'live');
 
+/** The phone camera is running right now (for any webcam widget): the idle night screen waits while it is. */
+export function webcamStreaming() { try { return camOn(readState()); } catch (_) { return false; } }
+
+/**
+ * The auto-start holds its page: an app on the PC reads the camera and the camera was not switched off by hand for this
+ * request. An app that keeps OBS Virtual Camera open in the background (NVIDIA Broadcast, a browser tab) then releases
+ * the page as soon as the camera is switched off.
+ */
+export function webcamHolds() { return autoWanted && !autoDeclined; }
+
 function autoWidget() {
   for (const page of pages) {
     const w = (page.widgets || []).find((x) => x.type === 'webcam' && x.options?.auto === true && x.options?.pc !== false);
@@ -157,7 +167,7 @@ W.webcam = {
       if (!can) return;
       if (running(read())) {
         bridge.webcamStop();
-        if (autoWanted) autoDeclined = true; // switched off by hand while the PC wants it: stays off for this call
+        if (autoWanted) { autoDeclined = true; requestBack(AUTO_RULE); } // off by hand while the PC wants it: stays off, and lets go of the page
         show({}); poll(); return;
       }
       if (bridge.canWebcam && !bridge.canWebcam()) { show({ widget: key, state: 'error', error: 'unavailable' }); return; }

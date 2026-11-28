@@ -46,3 +46,14 @@ test('the spectrum widget draws as a ring', async ({ page }) => {
   await page.waitForTimeout(500);
   expect(errors).toEqual([]);
 });
+
+test('a camera that is not running does not keep the panel awake', async ({ page }) => {
+  // An app that keeps OBS Virtual Camera open in the background (NVIDIA Broadcast) makes the agent say webcamWanted;
+  // only the phone camera actually running holds the idle night screen off.
+  await page.goto('/panel/');
+  const r = await page.evaluate(async () => {
+    const w = await import('/panel/widgets/webcam.js');
+    return { streaming: w.webcamStreaming(), holds: w.webcamHolds() };
+  });
+  expect(r).toEqual({ streaming: false, holds: false });
+});

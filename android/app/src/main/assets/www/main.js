@@ -14,7 +14,7 @@ import './widgets/photos.js';
 import './widgets/controls.js';
 import './widgets/console.js';
 import './widgets/dictate.js';
-import { autoWebcam } from './widgets/webcam.js';
+import { autoWebcam, webcamHolds, webcamStreaming } from './widgets/webcam.js';
 import './widgets/claude.js';
 import './widgets/camera.js';
 import './widgets/spectrum.js';
@@ -1933,7 +1933,7 @@ export function idleNight() {
     playing: !!media?.playing,
     prompt: !!(approvals.length || approvalShown),
     waiting: (D.work?.sessions || []).some((s) => s.status === 'waiting'),
-    webcam: !!D.state?.webcamWanted,
+    webcam: webcamStreaming(), // the camera running, not just an app holding OBS Virtual Camera open in the background
   });
 }
 
@@ -2262,7 +2262,7 @@ export function applyState(s, replayGen = null) {
   }
   // the "back" event can be missed while offline; the list of active rules settles it
   // (the webcam auto-start holds its page like a rule, for as long as the agent says an app reads the camera)
-  const active = Array.isArray(s.rules) && s.webcamWanted ? [...s.rules, 'webcam'] : s.rules;
+  const active = Array.isArray(s.rules) && s.webcamWanted && webcamHolds() ? [...s.rules, 'webcam'] : s.rules;
   if (ruleHold && Array.isArray(active) && !active.includes(ruleHold.rule) && Date.now() - ruleHold.at > 8000) requestBack(ruleHold.rule);
   if (s.webcamWanted !== undefined && !PREVIEW) autoWebcam(s.webcamWanted);
   rulesPaused = s.rulesPaused || null;
