@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.22.20 — 2026-11-28
+
+**Panel**
+- The idle night screen (OLED burn-in protection) no longer stays off because an app keeps OBS Virtual Camera open in
+  the background (NVIDIA Broadcast does): it now waits only while the phone camera is actually running.
+- Switching the phone camera off by hand during an auto-started "call" also lets go of the Live page, instead of
+  holding it until the app releases the camera.
+
 ## 0.9.22.19 — 2026-11-26
 
 **Panel**
